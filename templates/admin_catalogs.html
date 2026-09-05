@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Catálogos · Administração{% endblock %}
+{% block body %}
+<header class="topbar">
+  <div class="brand"><span class="brand-mark small">A</span><div><strong>Administração</strong><span>Catálogos de aplicações</span></div></div>
+  <nav class="top-actions"><a href="{{ url_for('index') }}">Consultar</a><a class="logout" href="{{ url_for('logout') }}">Sair</a></nav>
+</header>
+<main class="admin-workspace">
+  <section class="admin-heading">
+    <div><p class="eyebrow">BASE DE CONHECIMENTO</p><h1>Catálogos</h1><p>Inclua um catálogo em PDF. O processamento pode levar alguns minutos.</p></div>
+    <span class="catalog-count">{{ catalogs|length }} cadastrado{{ 's' if catalogs|length != 1 else '' }}</span>
+  </section>
+  {% for category, message in get_flashed_messages(with_categories=true) %}<div class="flash {{ category }}" role="status">{{ message }}</div>{% endfor %}
+  <section class="admin-card">
+    <h2>Incluir catálogo</h2>
+    <form method="post" enctype="multipart/form-data" class="upload-form">
+      <label>Fabricante<input name="manufacturer" placeholder="Ex.: AuthoMix" required></label>
+      <label>Edição ou data<input name="edition" placeholder="Ex.: Abril/2022" required></label>
+      <label class="file-field">Arquivo PDF<input type="file" name="catalog" accept="application/pdf,.pdf" required><span>Limite de 60 MB</span></label>
+      <button type="submit" onclick="this.textContent='Processando…';this.form.submit();this.disabled=true">Processar e incluir</button>
+    </form>
+  </section>
+  <section class="catalog-list">
+    <h2>Catálogos cadastrados</h2>
+    {% for catalog in catalogs %}
+      <article class="catalog-row">
+        <div><strong>{{ catalog.manufacturer }}</strong><span>{{ catalog.edition }} · {{ catalog.item_count }} produtos · {{ catalog.filename }}</span></div>
+        <form method="post" action="{{ url_for('toggle_catalog', catalog_id=catalog.id) }}"><button class="toggle {{ 'active' if catalog.active else '' }}" type="submit">{{ 'Ativo' if catalog.active else 'Inativo' }}</button></form>
+      </article>
+    {% else %}<div class="empty">Nenhum catálogo cadastrado.</div>{% endfor %}
+  </section>
+</main>
+{% endblock %}

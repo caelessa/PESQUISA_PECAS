@@ -2,7 +2,7 @@
 {% block body %}
 <header class="topbar">
   <div class="brand"><span class="brand-mark small">A</span><div><strong>Consulta de Autopeças</strong><span>Catálogo AuthoMix · Abril/2022</span></div></div>
-  <a class="logout" href="{{ url_for('logout') }}">Sair</a>
+  <nav class="top-actions">{% if is_admin %}<a href="{{ url_for('admin_catalogs') }}">Catálogos</a>{% endif %}<a class="logout" href="{{ url_for('logout') }}">Sair</a></nav>
 </header>
 
 <main class="workspace">

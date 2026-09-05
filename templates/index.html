@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="topbar">
+  <div class="brand"><span class="brand-mark small">A</span><div><strong>Consulta de Autopeças</strong><span>Catálogo AuthoMix · Abril/2022</span></div></div>
+  <a class="logout" href="{{ url_for('logout') }}">Sair</a>
+</header>
+
+<main class="workspace">
+  <section class="search-panel">
+    <p class="eyebrow">CONSULTA NO BALCÃO</p>
+    <h1>O que você precisa encontrar?</h1>
+    <form id="search-form" class="search-box">
+      <input id="query" autocomplete="off" placeholder="Ex.: bieleta dianteira Argo 2018" aria-label="Pergunta ou código da peça" autofocus>
+      <button type="submit">Pesquisar</button>
+    </form>
+    <div class="examples" aria-label="Exemplos de pesquisa">
+      <button data-query="BI41104">BI41104</button>
+      <button data-query="bieleta dianteira Argo 2018">Argo 2018</button>
+      <button data-query="Nakata N92025">Nakata N92025</button>
+    </div>
+  </section>
+
+  <section id="status" class="status-card">
+    <div><strong>{{ total }}</strong><span>itens extraídos</span></div>
+    <p>{{ catalog_total }} catálogo ativo. Pesquise pelo código, peça, veículo, ano ou equivalente.</p>
+  </section>
+
+  <section id="results" class="results" aria-live="polite"></section>
+</main>
+
+<template id="result-template">
+  <article class="result-card">
+    <div class="result-head">
+      <div><span class="manufacturer"></span><h2 class="code"></h2></div>
+      <span class="confidence">Encontrado no catálogo</span>
+    </div>
+    <p class="description"></p>
+    <div class="source"><span class="category"></span><span class="pages"></span><span class="edition"></span></div>
+    <details><summary>Ver texto extraído do catálogo</summary><p class="raw-text"></p></details>
+  </article>
+</template>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% endblock %}

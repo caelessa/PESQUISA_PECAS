@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Entrar · Consulta de Autopeças{% endblock %}
+{% block body %}
+<main class="login-shell">
+  <section class="login-card">
+    <div class="brand-mark" aria-hidden="true">A</div>
+    <p class="eyebrow">USO INTERNO</p>
+    <h1>Consulta de Autopeças</h1>
+    <p class="muted">Acesso exclusivo para vendedores.</p>
+    <form method="post" class="login-form">
+      <label>Usuário<input name="username" autocomplete="username" required autofocus></label>
+      <label>Senha<input type="password" name="password" autocomplete="current-password" required></label>
+      {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+      <button type="submit">Entrar</button>
+    </form>
+  </section>
+</main>
+{% endblock %}
+

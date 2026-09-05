@@ -20,6 +20,10 @@ No Linux/macOS, substitua `set` por `export`. Acesse `http://localhost:5000`.
 
 O arquivo `render.yaml` já descreve o serviço. Crie um Blueprint no Render a partir do repositório e informe `BALCAO_PASSWORD` quando solicitado. O usuário padrão configurado é `vendedor`.
 
+Informe também `ADMIN_PASSWORD`. O usuário administrativo padrão é `admin`; ele abre a área de catálogos para processar, ativar ou desativar PDFs.
+
+O Blueprint cria um PostgreSQL para manter os catálogos enviados. No plano gratuito do Render, esse banco serve à validação e expira após 30 dias; para uso contínuo será necessário migrar ou atualizar o plano.
+
 ## Importar outro catálogo
 
 Execute o importador indicando fabricante e edição. Salve cada catálogo como um arquivo `.json` diferente dentro de `data/`; a aplicação carrega todos automaticamente, sem mudança na tela.

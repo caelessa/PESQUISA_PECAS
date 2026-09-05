@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: consulta-autopecas
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /health
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: BALCAO_USER
+        value: vendedor
+      - key: BALCAO_PASSWORD
+        sync: false
+

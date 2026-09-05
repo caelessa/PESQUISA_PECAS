@@ -87,6 +87,10 @@ def normalize(value: str) -> str:
     return re.sub(r"[^A-Z0-9./-]+", " ", value).strip()
 
 
+def contains_token(text: str, token: str) -> bool:
+    return re.search(rf"(?<![A-Z0-9]){re.escape(token)}(?![A-Z0-9])", text) is not None
+
+
 def logged_in(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -110,6 +114,19 @@ def admin_required(view):
 def token_score(query: str, item: dict) -> tuple[int, list[str]]:
     qnorm = normalize(query)
     haystack = item.get("search", normalize(item.get("text", "")))
+    category = normalize(item.get("category", ""))
+    category_intents = {
+        "FILTRO DO AR": "FILTRO DO AR",
+        "FILTRO DE AR": "FILTRO DO AR",
+        "FILTRO DO OLEO": "FILTRO DO OLEO",
+        "FILTRO DE OLEO": "FILTRO DO OLEO",
+        "FILTRO DO COMBUSTIVEL": "FILTRO DO COMBUSTIVEL",
+        "FILTRO DE COMBUSTIVEL": "FILTRO DO COMBUSTIVEL",
+        "FILTRO DE CABINE": "FILTRO DE CABINE",
+    }
+    requested_category = next((target for phrase, target in category_intents.items() if phrase in qnorm), None)
+    if requested_category and requested_category not in category:
+        return 0, []
     raw_tokens = [ALIASES.get(t, t) for t in qnorm.split() if t not in STOPWORDS and len(t) > 1]
     years = [int(t) for t in raw_tokens if t.isdigit() and len(t) == 4 and 1950 <= int(t) <= 2035]
     tokens = [t for t in raw_tokens if not (t.isdigit() and len(t) == 4)]
@@ -124,7 +141,7 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
         matches.append("código")
     missing = []
     for token in tokens:
-        if token in haystack:
+        if contains_token(haystack, token):
             score += 18 if any(ch.isdigit() for ch in token) else 10
             matches.append(token)
         else:
@@ -135,13 +152,19 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
     if years:
         spans = []
         anchors = [t for t in tokens if t not in GENERIC_TERMS and not any(ch.isdigit() for ch in t)]
+        anchors = anchors[-1:]
         year_text = haystack
         if anchors:
             pieces = []
             for anchor in anchors:
                 for match in re.finditer(rf"\b{re.escape(anchor)}\b", haystack):
-                    segment = haystack[match.start():match.start() + 70]
-                    pieces.append(re.split(r"[,;]", segment, maxsplit=1)[0])
+                    if "|" in haystack:
+                        left = haystack.rfind("|", 0, match.start()) + 1
+                        right = haystack.find("|", match.end())
+                        pieces.append(haystack[left:right if right >= 0 else len(haystack)])
+                    else:
+                        segment = haystack[match.start():match.start() + 90]
+                        pieces.append(re.split(r"[,;]", segment, maxsplit=1)[0])
             if pieces:
                 year_text = " ".join(pieces)
         for start, end in YEAR_RE.findall(year_text):
@@ -158,8 +181,8 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
         elif spans:
             return 0, []
         else:
-            score -= 35
-    if tokens and all(token in haystack for token in tokens):
+            return 0, []
+    if tokens and all(contains_token(haystack, token) for token in tokens):
         score += 45
     return score, matches
 

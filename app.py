@@ -339,6 +339,34 @@ SPEC_QUERY_WORDS = {
     "MILIMETROS", "MM", "TEM", "TENHA", "COM", "E",
 }
 
+# Campos técnicos presentes em catálogos estruturados, como o da Fremax.
+# As frases mais específicas vêm primeiro para que "espessura mínima" não seja
+# confundida com o campo genérico "espessura".
+TECHNICAL_FIELD_QUERIES = (
+    ("ESPESSURA MINIMA", "ESPESSURA MINIMA", "espessura mínima"),
+    ("DIAMETRO DO FURO CENTRAL", "DIAMETRO DO FURO CENTRAL", "diâmetro do furo central"),
+    ("DIAMETRO DO FURO DE FIXACAO", "DIAMETRO DO FURO DE FIXACAO", "diâmetro do furo de fixação"),
+    ("DIAMETRO POSICAO DOS FUROS", "DIAMETRO POSICAO DOS FUROS", "diâmetro da posição dos furos"),
+    ("DIAMETRO DE ASSENTAMENTO", "DIAMETRO DE ASSENTAMENTO", "diâmetro de assentamento"),
+    ("DIAMETRO EXTERNO", "DIAMETRO EXTERNO", "diâmetro externo"),
+    ("DIAMETRO INTERNO", "DIAMETRO INTERNO", "diâmetro interno"),
+    ("DIAMETRO MAXIMO", "DIAMETRO MAXIMO", "diâmetro máximo"),
+    ("ALTURA TOTAL", "ALTURA TOTAL", "altura total"),
+    ("QUANTIDADE DE FUROS GUIA", "QUANTIDADE DE FUROS GUIA", "quantidade de furos guia"),
+    ("QUANTIDADE DE FUROS", "QUANTIDADE DE FUROS", "quantidade de furos"),
+    ("QUANTIDADE DE ESTRIAS", "QUANTIDADE DE ESTRIAS", "quantidade de estrias"),
+    ("INCLUI ROLAMENTO", "INCLUI ROLAMENTO", "inclusão de rolamento"),
+    ("INCLUI CUBO", "INCLUI CUBO", "inclusão de cubo"),
+    ("SISTEMA DE VENTILACAO", "SISTEMA DE VENTILACAO", "sistema de ventilação"),
+    ("DISCO PERFURADO", "DISCO PERFURADO", "disco perfurado"),
+    ("DISCO SLOTADO", "DISCO SLOTADO", "disco slotado"),
+    ("ESPESSURA", "ESPESSURA", "espessura"),
+    ("POSICAO", "POSICAO", "posição"),
+    ("MODELO", "MODELO", "modelo"),
+    ("LADO", "LADO", "lado"),
+    ("ABS", "ABS", "ABS"),
+)
+
 
 def extract_specifications(value: str) -> dict[str, str]:
     text = normalize(value.replace(",", "."))
@@ -350,6 +378,31 @@ def extract_specifications(value: str) -> dict[str, str]:
                 found[name] = match.group(1).replace(".", ",")
                 break
     return found
+
+
+def technical_fields(value: str) -> dict[str, str]:
+    """Extract ``label: value`` pairs from a product's technical specification section."""
+    text = str(value or "")
+    marker = re.search(r"ESPECIFICA[CÇ][OÕ]ES T[EÉ]CNICAS:\s*", text, re.I)
+    if not marker:
+        return {}
+    section = text[marker.end():]
+    section = re.split(r"\.\s+(?:APLICA[CÇ][OÕ]ES|EQUIVAL[EÊ]NCIAS)\s*:", section, maxsplit=1, flags=re.I)[0]
+    fields = {}
+    for part in section.split(";"):
+        if ":" not in part:
+            continue
+        label, value = part.split(":", 1)
+        fields[normalize(label)] = value.strip().rstrip(".")
+    return fields
+
+
+def requested_technical_field(query: str) -> tuple[str, str] | None:
+    qnorm = normalize(query)
+    for query_phrase, catalog_label, response_label in TECHNICAL_FIELD_QUERIES:
+        if query_phrase in qnorm:
+            return catalog_label, response_label
+    return None
 
 
 def specification_context_query(query: str, requested: dict[str, str], requested_part: str) -> str:
@@ -437,7 +490,8 @@ def is_catalog_question(query: str) -> bool:
     question_terms = {
         "QUANTO", "QUANTOS", "QUANTA", "QUANTAS", "QUAL", "QUAIS", "ONDE", "COMO",
         "DENTE", "DENTES", "MEDIDA", "MEDIDAS", "ROSCA", "DIAMETRO", "COMPRIMENTO",
-        "ALTURA", "LARGURA", "PRESSAO", "BAR", "FOLGA",
+        "ALTURA", "LARGURA", "PRESSAO", "BAR", "FOLGA", "ESPESSURA", "MINIMA",
+        "FURO", "FUROS", "ESTRIA", "ESTRIAS", "CUBO", "ABS", "VENTILACAO",
         "ELO", "APLICA", "APLICACAO", "SERVE", "MOTOR", "COMBUSTIVEL", "POSICAO",
         "LADO", "EQUIVALENTE", "EQUIVALENTES", "ORIGINAL", "ORIGINAIS",
     }
@@ -473,6 +527,17 @@ def answer_catalog_question(query: str, results: list[dict]) -> dict | None:
     requested_specs = extract_specifications(query)
     requested_part = next((name for name, terms in PART_INTENTS.items() if any(term in qnorm.split() for term in terms)), None)
     requested_code = any(contains_token(qnorm, str(item.get("code", "")).upper()) for item in all_result_items)
+    technical_request = requested_technical_field(query)
+    if technical_request and requested_code:
+        catalog_label, response_label = technical_request
+        fields = technical_fields(primary.get("text", ""))
+        value = fields.get(catalog_label)
+        if value:
+            return {
+                "text": f"A {response_label} da peça {primary_code} é {value}.",
+                "supported": True,
+                "sources": sources_for([primary_code]),
+            }
     if requested_specs and requested_part and not requested_code:
         codes = [str(item.get("code", "")).upper() for item in all_result_items]
         if codes:

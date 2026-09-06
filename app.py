@@ -81,6 +81,11 @@ STOPWORDS = {"A", "AS", "O", "OS", "DE", "DA", "DO", "DAS", "DOS", "EM", "PARA",
 ALIASES = {"DIANTEIRO": "DIANTEIRA", "TRASEIRO": "TRASEIRA", "ESQUERDO": "ESQUERDA", "DIREITO": "DIREITA"}
 YEAR_RE = re.compile(r"(?<!\d)(\d{2})/(\d{2}|\.\.\.)(?!\d)")
 EXACT_YEAR_RE = re.compile(r"(?<![\d./])(\d{2})(?![\d./])")
+FULL_YEAR_RANGE_RE = re.compile(
+    r"(?<!\d)(?:\d{1,2}/)?(19\d{2}|20\d{2})\s+A\s+(?:\d{1,2}/)?(19\d{2}|20\d{2})(?!\d)"
+)
+SINCE_YEAR_RE = re.compile(r"\bDESDE\s+(?:\d{1,2}/)?(19\d{2}|20\d{2})(?!\d)")
+UNTIL_YEAR_RE = re.compile(r"\bATE\s+(?:\d{1,2}/)?(19\d{2}|20\d{2})(?!\d)")
 GENERIC_TERMS = {"BIELETA", "BOMBA", "AGUA", "CILINDRO", "CRUZETA", "CUBO", "FILTRO", "KIT", "BUCHA", "SUPORTE", "PINO", "PONTA", "POLIA", "GUIA", "TENSOR", "REPARO", "ROLAMENTO", "SAPATA", "SEMIEXO", "TERMINAL", "TRIZETA", "ADITIVO", "DIANTEIRA", "TRASEIRA", "DIREITA", "ESQUERDA"}
 
 
@@ -155,6 +160,18 @@ def contains_token(text: str, token: str) -> bool:
     return re.search(rf"(?<![A-Z0-9]){re.escape(token)}(?![A-Z0-9])", text) is not None
 
 
+def year_spans(text: str) -> list[tuple[int, int]]:
+    """Read catalog year formats such as 09/14, 2009 a 2014 and 2009 a 07/2014."""
+    spans = [(int(start), int(end)) for start, end in FULL_YEAR_RANGE_RE.findall(text)]
+    spans.extend((int(start), 9999) for start in SINCE_YEAR_RE.findall(text))
+    spans.extend((1950, int(end)) for end in UNTIL_YEAR_RE.findall(text))
+    for start, end in YEAR_RE.findall(text):
+        start_year = 1900 + int(start) if int(start) >= 40 else 2000 + int(start)
+        end_year = 9999 if end == "..." else (1900 + int(end) if int(end) >= 40 else 2000 + int(end))
+        spans.append((start_year, end_year))
+    return spans
+
+
 def logged_in(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -218,7 +235,6 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
     if missing:
         return 0, []
     if years:
-        spans = []
         anchors = [t for t in tokens if t not in GENERIC_TERMS and not t.isdigit()]
         anchors = anchors[-1:]
         year_text = haystack
@@ -231,14 +247,12 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
                         right = haystack.find("|", match.end())
                         pieces.append(haystack[left:right if right >= 0 else len(haystack)])
                     else:
-                        segment = haystack[match.start():match.start() + 90]
+                        # NGK descriptions can be long before the year column (engine, power and fuel).
+                        segment = haystack[match.start():match.start() + 260]
                         pieces.append(re.split(r"[,;]", segment, maxsplit=1)[0])
             if pieces:
                 year_text = " ".join(pieces)
-        for start, end in YEAR_RE.findall(year_text):
-            start_year = 1900 + int(start) if int(start) >= 40 else 2000 + int(start)
-            end_year = 9999 if end == "..." else (1900 + int(end) if int(end) >= 40 else 2000 + int(end))
-            spans.append((start_year, end_year))
+        spans = year_spans(year_text)
         if not spans and anchors:
             for exact in EXACT_YEAR_RE.findall(year_text):
                 exact_year = 1900 + int(exact) if int(exact) >= 40 else 2000 + int(exact)

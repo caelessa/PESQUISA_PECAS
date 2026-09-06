@@ -9,9 +9,11 @@ import unicodedata
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
+from typing import Optional
 
 from flask import Flask, abort, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
+from pydantic import BaseModel
 from sqlalchemy import UniqueConstraint
 
 from scripts.import_catalog import extract
@@ -63,7 +65,7 @@ def initialize_database():
             first = items[0]
             db.session.add(Catalog(
                 manufacturer=first.get("manufacturer", data_file.stem),
-                edition=first.get("edition", "Sem edição"),
+                edition=first.get("edition", "Sem ediÃ§Ã£o"),
                 filename=data_file.name,
                 item_count=len(items),
                 data=json.dumps(items, ensure_ascii=False),
@@ -75,11 +77,24 @@ def initialize_database():
 with app.app_context():
     initialize_database()
 
-STOPWORDS = {"A", "AS", "O", "OS", "DE", "DA", "DO", "DAS", "DOS", "PARA", "QUAL", "QUAIS", "UMA", "UM", "NO", "NA", "NOS", "NAS", "SERVE", "APLICA", "APLICACAO", "PRECISO", "PECA", "AUTHOMIX", "NAKATA", "COFAP", "TRW", "AXIOS", "PDX"}
+STOPWORDS = {"A", "AS", "O", "OS", "DE", "DA", "DO", "DAS", "DOS", "EM", "PARA", "QUAL", "QUAIS", "UMA", "UM", "NO", "NA", "NOS", "NAS", "ONDE", "AONDE", "SERVE", "SERVEM", "APLICA", "APLICAM", "APLICACAO", "APLICACOES", "USADO", "USADA", "UTILIZADO", "UTILIZADA", "CARRO", "CARROS", "VEICULO", "VEICULOS", "PRECISO", "PECA", "AUTHOMIX", "NAKATA", "COFAP", "TRW", "AXIOS", "PDX"}
 ALIASES = {"DIANTEIRO": "DIANTEIRA", "TRASEIRO": "TRASEIRA", "ESQUERDO": "ESQUERDA", "DIREITO": "DIREITA"}
 YEAR_RE = re.compile(r"(?<!\d)(\d{2})/(\d{2}|\.\.\.)(?!\d)")
 EXACT_YEAR_RE = re.compile(r"(?<![\d./])(\d{2})(?![\d./])")
 GENERIC_TERMS = {"BIELETA", "BOMBA", "AGUA", "CILINDRO", "CRUZETA", "CUBO", "FILTRO", "KIT", "BUCHA", "SUPORTE", "PINO", "PONTA", "POLIA", "GUIA", "TENSOR", "REPARO", "ROLAMENTO", "SAPATA", "SEMIEXO", "TERMINAL", "TRIZETA", "ADITIVO", "DIANTEIRA", "TRASEIRA", "DIREITA", "ESQUERDA"}
+
+
+class CatalogQuestion(BaseModel):
+    part_code: str
+    part_type: str
+    manufacturer: str
+    vehicle_make: str
+    vehicle_model: str
+    year: Optional[int]
+    engine: str
+    position: str
+    side: str
+    normalized_query: str
 
 
 def normalize(value: str) -> str:
@@ -137,10 +152,12 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
     score, matches = 0, []
     code = normalize(item.get("code", ""))
     if qnorm == code:
-        return 1000, ["código exato"]
+        return 1000, ["cÃ³digo exato"]
+    if code in raw_tokens:
+        return 1000, ["cÃ³digo exato"]
     if code and code in qnorm:
         score += 300
-        matches.append("código")
+        matches.append("cÃ³digo")
     missing = []
     for token in tokens:
         if contains_token(haystack, token):
@@ -201,6 +218,40 @@ def search_catalog(query: str, limit: int = 12):
     return [{**item, "score": score, "matches": matches[:6]} for score, item, matches in ranked[:limit]]
 
 
+def interpret_catalog_question(query: str) -> CatalogQuestion | None:
+    """Use AI only to convert a natural question into catalog search terms."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        return None
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(timeout=12.0, max_retries=1)
+        response = client.responses.parse(
+            model=os.environ.get("OPENAI_MODEL", "gpt-5-mini"),
+            input=[
+                {
+                    "role": "system",
+                    "content": (
+                        "VocÃª interpreta perguntas de balcÃ£o de autopeÃ§as em portuguÃªs do Brasil. "
+                        "Extraia somente os dados informados pelo usuÃ¡rio. NÃ£o indique compatibilidade, "
+                        "nÃ£o invente veÃ­culos, anos, motores, marcas ou cÃ³digos. Remova palavras de pergunta "
+                        "como 'onde aplica', 'qual serve' e 'preciso de'. Em normalized_query, devolva apenas "
+                        "os termos Ãºteis para pesquisar literalmente em um catÃ¡logo: cÃ³digo, tipo da peÃ§a, "
+                        "fabricante da peÃ§a, marca/modelo do veÃ­culo, ano, motor, posiÃ§Ã£o e lado. Preserve cÃ³digos "
+                        "com hÃ­fen. Exemplos: 'qual filtro vai no City 2012?' vira 'FILTRO CITY 2012'; "
+                        "'onde aplica WEOC-004?' vira 'WEOC-004'. Use string vazia para dados ausentes."
+                    ),
+                },
+                {"role": "user", "content": query[:500]},
+            ],
+            text_format=CatalogQuestion,
+        )
+        return response.output_parsed
+    except Exception:
+        app.logger.exception("Falha ao interpretar pergunta com OpenAI")
+        return None
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
@@ -219,7 +270,7 @@ def login():
             session["logged_in"] = True
             session["role"] = "seller"
             return redirect(url_for("index"))
-        error = "Usuário ou senha incorretos."
+        error = "UsuÃ¡rio ou senha incorretos."
     return render_template("login.html", error=error)
 
 
@@ -243,10 +294,10 @@ def admin_catalogs():
         manufacturer = request.form.get("manufacturer", "").strip()
         edition = request.form.get("edition", "").strip()
         if not uploaded or not uploaded.filename.lower().endswith(".pdf") or not manufacturer or not edition:
-            flash("Informe fabricante, edição e um arquivo PDF válido.", "error")
+            flash("Informe fabricante, ediÃ§Ã£o e um arquivo PDF vÃ¡lido.", "error")
             return redirect(url_for("admin_catalogs"))
         if Catalog.query.filter_by(manufacturer=manufacturer, edition=edition).first():
-            flash("Já existe um catálogo desse fabricante com essa edição.", "error")
+            flash("JÃ¡ existe um catÃ¡logo desse fabricante com essa ediÃ§Ã£o.", "error")
             return redirect(url_for("admin_catalogs"))
         temp_path = None
         try:
@@ -255,16 +306,16 @@ def admin_catalogs():
                 temp_path = Path(temp.name)
             items = extract(temp_path, manufacturer, edition)
             if not items:
-                flash("Nenhum produto pôde ser extraído desse PDF.", "error")
+                flash("Nenhum produto pÃ´de ser extraÃ­do desse PDF.", "error")
                 return redirect(url_for("admin_catalogs"))
             db.session.add(Catalog(manufacturer=manufacturer, edition=edition, filename=uploaded.filename, item_count=len(items), data=json.dumps(items, ensure_ascii=False)))
             db.session.commit()
             refresh_cache()
-            flash(f"Catálogo incluído com {len(items)} produtos.", "success")
+            flash(f"CatÃ¡logo incluÃ­do com {len(items)} produtos.", "success")
         except Exception:
             db.session.rollback()
-            app.logger.exception("Falha ao importar catálogo")
-            flash("Não foi possível processar o catálogo. Confira o PDF e tente novamente.", "error")
+            app.logger.exception("Falha ao importar catÃ¡logo")
+            flash("NÃ£o foi possÃ­vel processar o catÃ¡logo. Confira o PDF e tente novamente.", "error")
         finally:
             if temp_path:
                 temp_path.unlink(missing_ok=True)
@@ -279,7 +330,7 @@ def toggle_catalog(catalog_id):
     catalog.active = not catalog.active
     db.session.commit()
     refresh_cache()
-    flash("Status do catálogo atualizado.", "success")
+    flash("Status do catÃ¡logo atualizado.", "success")
     return redirect(url_for("admin_catalogs"))
 
 
@@ -291,7 +342,7 @@ def delete_catalog(catalog_id):
     db.session.delete(catalog)
     db.session.commit()
     refresh_cache()
-    flash(f"Catálogo {name} excluído. Você já pode importá-lo novamente.", "success")
+    flash(f"CatÃ¡logo {name} excluÃ­do. VocÃª jÃ¡ pode importÃ¡-lo novamente.", "success")
     return redirect(url_for("admin_catalogs"))
 
 
@@ -301,7 +352,20 @@ def api_search():
     query = (request.get_json(silent=True) or {}).get("query", "").strip()
     if len(query) < 2:
         return jsonify({"error": "Digite pelo menos dois caracteres."}), 400
-    return jsonify({"query": query, "results": search_catalog(query), "catalogs": len(CATALOGS)})
+    results = search_catalog(query)
+    interpreted = None
+    if not results:
+        interpreted = interpret_catalog_question(query)
+        ai_query = interpreted.normalized_query.strip() if interpreted else ""
+        if ai_query and normalize(ai_query) != normalize(query):
+            results = search_catalog(ai_query)
+    return jsonify({
+        "query": query,
+        "results": results,
+        "catalogs": len(CATALOGS),
+        "ai_used": interpreted is not None,
+        "interpreted_query": interpreted.normalized_query if interpreted else None,
+    })
 
 
 @app.get("/health")

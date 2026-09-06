@@ -270,6 +270,9 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
 
 
 def search_catalog(query: str, limit: int = 12):
+    specification_results = search_trizeta_specifications(query, limit)
+    if specification_results is not None:
+        return specification_results
     ranked = []
     for item in ITEMS:
         score, matches = token_score(query, item)
@@ -279,6 +282,51 @@ def search_catalog(query: str, limit: int = 12):
     if ranked and ranked[0][0] >= 1000:
         ranked = [ranked[0]]
     return [{**item, "score": score, "matches": matches[:6]} for score, item, matches in ranked[:limit]]
+
+
+def search_trizeta_specifications(query: str, limit: int = 12) -> list[dict] | None:
+    """Reverse-search trizetas by teeth and link diameter, keeping each code's own text block."""
+    qnorm = normalize(query)
+    if "TRIZETA" not in qnorm:
+        return None
+    teeth_match = re.search(r"(?<!\d)(\d{1,3})\s+DENTES?\b", qnorm)
+    link_match = re.search(r"\bELO\s+(\d+(?:[.,]\d+)?)\s*MM\b", qnorm)
+    if not teeth_match or not link_match:
+        return None
+    requested_teeth = teeth_match.group(1)
+    requested_link = link_match.group(1).replace(",", ".")
+    requested_link_value = float(requested_link)
+    matched_codes = set()
+
+    for item in ITEMS:
+        text = str(item.get("text", ""))
+        # Some PDF rows contain several codes. Check each code's own block so a
+        # specification from the next product is never attributed to the previous one.
+        blocks = re.split(r"(?=\bTZ\d{4,8}\b)", text, flags=re.I)
+        for block in blocks:
+            code_match = re.match(r"\b(TZ\d{4,8})\b", block.strip(), flags=re.I)
+            if not code_match:
+                continue
+            block_norm = normalize(block[:700])
+            block_teeth = re.search(r"(?<!\d)(\d{1,3})\s+DENTES?\b", block_norm)
+            block_link = re.search(r"\bELO\s+(\d+(?:[.,]\d+)?)\s*MM\b", block_norm)
+            if not block_teeth or not block_link:
+                continue
+            link_value = float(block_link.group(1).replace(",", "."))
+            if block_teeth.group(1) == requested_teeth and abs(link_value - requested_link_value) < 0.01:
+                matched_codes.add(code_match.group(1).upper())
+
+    canonical = {str(item.get("code", "")).upper(): item for item in ITEMS}
+    results = []
+    for code in sorted(matched_codes):
+        item = canonical.get(code)
+        if item:
+            results.append({
+                **item,
+                "score": 900,
+                "matches": [f"{requested_teeth} dentes", f"elo {link_match.group(1)} mm"],
+            })
+    return results[:limit]
 
 
 def is_catalog_question(query: str) -> bool:
@@ -317,6 +365,24 @@ def answer_catalog_question(query: str, results: list[dict]) -> dict | None:
     primary = evidence_items[0]
     primary_text = normalize(str(primary.get("text", "")))
     primary_code = str(primary.get("code", "")).upper()
+    requested_teeth = re.search(r"(?<!\d)(\d{1,3})\s+DENTES?\b", qnorm)
+    requested_link = re.search(r"\bELO\s+(\d+(?:[.,]\d+)?)\s*MM\b", qnorm)
+    requested_code = re.search(r"\bTZ\d{4,8}\b", qnorm)
+    if requested_teeth and requested_link and not requested_code:
+        codes = [str(item.get("code", "")).upper() for item in evidence_items]
+        if codes:
+            if len(codes) == 1:
+                subject = f"A trizeta {codes[0]} possui"
+            else:
+                subject = f"As trizetas {', '.join(codes[:-1])} e {codes[-1]} possuem"
+            return {
+                "text": (
+                    f"{subject} {requested_teeth.group(1)} dentes e elo de "
+                    f"{requested_link.group(1).replace('.', ',')} mm."
+                ),
+                "supported": True,
+                "sources": sources_for(codes),
+            }
     if "DENTE" in qnorm or "DENTES" in qnorm:
         teeth = re.search(r"(?<!\d)(\d{1,3})\s+DENTES?\b", primary_text)
         if teeth:

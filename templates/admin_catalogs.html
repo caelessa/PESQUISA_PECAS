@@ -25,7 +25,10 @@
     {% for catalog in catalogs %}
       <article class="catalog-row">
         <div><strong>{{ catalog.manufacturer }}</strong><span>{{ catalog.edition }} · {{ catalog.item_count }} produtos · {{ catalog.filename }}</span></div>
-        <form method="post" action="{{ url_for('toggle_catalog', catalog_id=catalog.id) }}"><button class="toggle {{ 'active' if catalog.active else '' }}" type="submit">{{ 'Ativo' if catalog.active else 'Inativo' }}</button></form>
+        <div class="catalog-actions">
+          <form method="post" action="{{ url_for('toggle_catalog', catalog_id=catalog.id) }}"><button class="toggle {{ 'active' if catalog.active else '' }}" type="submit">{{ 'Ativo' if catalog.active else 'Inativo' }}</button></form>
+          <form method="post" action="{{ url_for('delete_catalog', catalog_id=catalog.id) }}" onsubmit="return confirm('Excluir este catálogo e suas aplicações?')"><button class="delete-button" type="submit">Excluir</button></form>
+        </div>
       </article>
     {% else %}<div class="empty">Nenhum catálogo cadastrado.</div>{% endfor %}
   </section>

@@ -51,6 +51,9 @@ form.addEventListener('submit', async event => {
         answerCard.appendChild(source);
       }
       results.appendChild(answerCard);
+      // Para perguntas respondidas pelo catálogo, a resposta e a fonte são suficientes.
+      // Evita mostrar abaixo todo o texto bruto de aplicações da peça.
+      if (data.answer.supported) return;
     }
     const heading = document.createElement('div');
     heading.className = 'results-title';

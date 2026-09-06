@@ -7,7 +7,7 @@
 </header>
 <main class="admin-workspace">
   <section class="admin-heading">
-    <div><p class="eyebrow">BASE DE CONHECIMENTO</p><h1>Catálogos</h1><p>Inclua um catálogo em PDF. O processamento pode levar alguns minutos.</p></div>
+    <div><p class="eyebrow">BASE DE CONHECIMENTO</p><h1>Catálogos</h1><p>Importe um catálogo preparado em JSON ou tente processar um PDF compatível.</p></div>
     <span class="catalog-count">{{ catalogs|length }} cadastrado{{ 's' if catalogs|length != 1 else '' }}</span>
   </section>
   {% for category, message in get_flashed_messages(with_categories=true) %}<div class="flash {{ category }}" role="status">{{ message }}</div>{% endfor %}
@@ -16,8 +16,8 @@
     <form method="post" enctype="multipart/form-data" class="upload-form">
       <label>Fabricante<input name="manufacturer" placeholder="Ex.: AuthoMix" required></label>
       <label>Edição ou data<input name="edition" placeholder="Ex.: Abril/2022" required></label>
-      <label class="file-field">Arquivo PDF<input type="file" name="catalog" accept="application/pdf,.pdf" required><span>Limite de 60 MB</span></label>
-      <button type="submit" onclick="this.textContent='Processando…';this.form.submit();this.disabled=true">Processar e incluir</button>
+      <label class="file-field">Arquivo do catálogo<input type="file" name="catalog" accept="application/json,.json,application/pdf,.pdf" required><span>JSON preparado (recomendado) ou PDF compatível · limite de 60 MB</span></label>
+      <button type="submit" onclick="this.textContent='Importando…';this.form.submit();this.disabled=true">Importar catálogo</button>
     </form>
   </section>
   <section class="catalog-list">

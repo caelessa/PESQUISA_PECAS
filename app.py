@@ -65,7 +65,7 @@ def initialize_database():
             first = items[0]
             db.session.add(Catalog(
                 manufacturer=first.get("manufacturer", data_file.stem),
-                edition=first.get("edition", "Sem ediÃ§Ã£o"),
+                edition=first.get("edition", "Sem edição"),
                 filename=data_file.name,
                 item_count=len(items),
                 data=json.dumps(items, ensure_ascii=False),
@@ -100,6 +100,49 @@ class CatalogQuestion(BaseModel):
 def normalize(value: str) -> str:
     value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().upper()
     return re.sub(r"[^A-Z0-9./-]+", " ", value).strip()
+
+
+def validate_prepared_catalog(payload, manufacturer: str, edition: str) -> list[dict]:
+    """Validate and normalize a prepared JSON catalog before saving it."""
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("O JSON deve conter uma lista de produtos.")
+    if len(payload) > 50000:
+        raise ValueError("O catálogo ultrapassa o limite de 50.000 produtos.")
+
+    products = []
+    seen_codes = set()
+    for position, raw in enumerate(payload, 1):
+        if not isinstance(raw, dict):
+            raise ValueError(f"Produto {position} inválido.")
+        code = str(raw.get("code", "")).strip().upper()
+        text = str(raw.get("text", "")).strip()
+        category = str(raw.get("category", "Autopeças")).strip() or "Autopeças"
+        if not code or len(code) > 80 or not re.fullmatch(r"[A-Z0-9][A-Z0-9./_-]*", code):
+            raise ValueError(f"Código inválido no produto {position}.")
+        if code in seen_codes:
+            raise ValueError(f"Código duplicado no JSON: {code}.")
+        if not text or len(text) > 100000:
+            raise ValueError(f"Descrição inválida para o código {code}.")
+        raw_pages = raw.get("pages", raw.get("page", []))
+        if isinstance(raw_pages, int):
+            raw_pages = [raw_pages]
+        if not isinstance(raw_pages, list):
+            raw_pages = []
+        pages = sorted({int(page) for page in raw_pages if str(page).isdigit() and int(page) > 0})
+        product = {
+            "code": code,
+            "manufacturer": manufacturer,
+            "edition": edition,
+            "category": category[:160],
+            "pages": pages,
+            "text": text,
+        }
+        product["search"] = normalize(" ".join([
+            code, manufacturer, edition, category, text, str(raw.get("search", ""))
+        ]))
+        products.append(product)
+        seen_codes.add(code)
+    return products
 
 
 def contains_token(text: str, token: str) -> bool:
@@ -152,12 +195,12 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
     score, matches = 0, []
     code = normalize(item.get("code", ""))
     if qnorm == code:
-        return 1000, ["cÃ³digo exato"]
+        return 1000, ["código exato"]
     if code in raw_tokens:
-        return 1000, ["cÃ³digo exato"]
+        return 1000, ["código exato"]
     if code and code in qnorm:
         score += 300
-        matches.append("cÃ³digo")
+        matches.append("código")
     missing = []
     for token in tokens:
         if contains_token(haystack, token):
@@ -170,7 +213,7 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
         return 0, []
     if years:
         spans = []
-        anchors = [t for t in tokens if t not in GENERIC_TERMS and not any(ch.isdigit() for ch in t)]
+        anchors = [t for t in tokens if t not in GENERIC_TERMS and not t.isdigit()]
         anchors = anchors[-1:]
         year_text = haystack
         if anchors:
@@ -232,13 +275,13 @@ def interpret_catalog_question(query: str) -> CatalogQuestion | None:
                 {
                     "role": "system",
                     "content": (
-                        "VocÃª interpreta perguntas de balcÃ£o de autopeÃ§as em portuguÃªs do Brasil. "
-                        "Extraia somente os dados informados pelo usuÃ¡rio. NÃ£o indique compatibilidade, "
-                        "nÃ£o invente veÃ­culos, anos, motores, marcas ou cÃ³digos. Remova palavras de pergunta "
+                        "Você interpreta perguntas de balcão de autopeças em português do Brasil. "
+                        "Extraia somente os dados informados pelo usuário. Não indique compatibilidade, "
+                        "não invente veículos, anos, motores, marcas ou códigos. Remova palavras de pergunta "
                         "como 'onde aplica', 'qual serve' e 'preciso de'. Em normalized_query, devolva apenas "
-                        "os termos Ãºteis para pesquisar literalmente em um catÃ¡logo: cÃ³digo, tipo da peÃ§a, "
-                        "fabricante da peÃ§a, marca/modelo do veÃ­culo, ano, motor, posiÃ§Ã£o e lado. Preserve cÃ³digos "
-                        "com hÃ­fen. Exemplos: 'qual filtro vai no City 2012?' vira 'FILTRO CITY 2012'; "
+                        "os termos úteis para pesquisar literalmente em um catálogo: código, tipo da peça, "
+                        "fabricante da peça, marca/modelo do veículo, ano, motor, posição e lado. Preserve códigos "
+                        "com hífen. Exemplos: 'qual filtro vai no City 2012?' vira 'FILTRO CITY 2012'; "
                         "'onde aplica WEOC-004?' vira 'WEOC-004'. Use string vazia para dados ausentes."
                     ),
                 },
@@ -270,7 +313,7 @@ def login():
             session["logged_in"] = True
             session["role"] = "seller"
             return redirect(url_for("index"))
-        error = "UsuÃ¡rio ou senha incorretos."
+        error = "Usuário ou senha incorretos."
     return render_template("login.html", error=error)
 
 
@@ -293,29 +336,37 @@ def admin_catalogs():
         uploaded = request.files.get("catalog")
         manufacturer = request.form.get("manufacturer", "").strip()
         edition = request.form.get("edition", "").strip()
-        if not uploaded or not uploaded.filename.lower().endswith(".pdf") or not manufacturer or not edition:
-            flash("Informe fabricante, ediÃ§Ã£o e um arquivo PDF vÃ¡lido.", "error")
+        suffix = Path(uploaded.filename).suffix.lower() if uploaded else ""
+        if not uploaded or suffix not in {".pdf", ".json"} or not manufacturer or not edition:
+            flash("Informe fabricante, edição e um arquivo PDF ou JSON válido.", "error")
             return redirect(url_for("admin_catalogs"))
         if Catalog.query.filter_by(manufacturer=manufacturer, edition=edition).first():
-            flash("JÃ¡ existe um catÃ¡logo desse fabricante com essa ediÃ§Ã£o.", "error")
+            flash("Já existe um catálogo desse fabricante com essa edição.", "error")
             return redirect(url_for("admin_catalogs"))
         temp_path = None
         try:
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp:
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp:
                 uploaded.save(temp)
                 temp_path = Path(temp.name)
-            items = extract(temp_path, manufacturer, edition)
+            if suffix == ".json":
+                with temp_path.open("r", encoding="utf-8-sig") as stream:
+                    items = validate_prepared_catalog(json.load(stream), manufacturer, edition)
+            else:
+                items = extract(temp_path, manufacturer, edition)
             if not items:
-                flash("Nenhum produto pÃ´de ser extraÃ­do desse PDF.", "error")
+                flash("Nenhum produto pôde ser extraído desse arquivo.", "error")
                 return redirect(url_for("admin_catalogs"))
             db.session.add(Catalog(manufacturer=manufacturer, edition=edition, filename=uploaded.filename, item_count=len(items), data=json.dumps(items, ensure_ascii=False)))
             db.session.commit()
             refresh_cache()
-            flash(f"CatÃ¡logo incluÃ­do com {len(items)} produtos.", "success")
+            flash(f"Catálogo incluído com {len(items)} produtos.", "success")
+        except (ValueError, json.JSONDecodeError) as error:
+            db.session.rollback()
+            flash(f"Catálogo preparado inválido: {error}", "error")
         except Exception:
             db.session.rollback()
-            app.logger.exception("Falha ao importar catÃ¡logo")
-            flash("NÃ£o foi possÃ­vel processar o catÃ¡logo. Confira o PDF e tente novamente.", "error")
+            app.logger.exception("Falha ao importar catálogo")
+            flash("Não foi possível processar o catálogo. Confira o arquivo e tente novamente.", "error")
         finally:
             if temp_path:
                 temp_path.unlink(missing_ok=True)
@@ -330,7 +381,7 @@ def toggle_catalog(catalog_id):
     catalog.active = not catalog.active
     db.session.commit()
     refresh_cache()
-    flash("Status do catÃ¡logo atualizado.", "success")
+    flash("Status do catálogo atualizado.", "success")
     return redirect(url_for("admin_catalogs"))
 
 
@@ -342,7 +393,7 @@ def delete_catalog(catalog_id):
     db.session.delete(catalog)
     db.session.commit()
     refresh_cache()
-    flash(f"CatÃ¡logo {name} excluÃ­do. VocÃª jÃ¡ pode importÃ¡-lo novamente.", "success")
+    flash(f"Catálogo {name} excluído. Você já pode importá-lo novamente.", "success")
     return redirect(url_for("admin_catalogs"))
 
 

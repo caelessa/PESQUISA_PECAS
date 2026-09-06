@@ -97,6 +97,12 @@ class CatalogQuestion(BaseModel):
     normalized_query: str
 
 
+class CatalogAnswer(BaseModel):
+    answer: str
+    supported: bool
+    source_codes: list[str]
+
+
 def normalize(value: str) -> str:
     value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().upper()
     return re.sub(r"[^A-Z0-9./-]+", " ", value).strip()
@@ -261,6 +267,83 @@ def search_catalog(query: str, limit: int = 12):
     return [{**item, "score": score, "matches": matches[:6]} for score, item, matches in ranked[:limit]]
 
 
+def is_catalog_question(query: str) -> bool:
+    qnorm = normalize(query)
+    question_terms = {
+        "QUANTO", "QUANTOS", "QUANTA", "QUANTAS", "QUAL", "QUAIS", "ONDE", "COMO",
+        "DENTE", "DENTES", "MEDIDA", "MEDIDAS", "ROSCA", "DIAMETRO", "COMPRIMENTO",
+        "ELO", "APLICA", "APLICACAO", "SERVE", "MOTOR", "COMBUSTIVEL", "POSICAO",
+        "LADO", "EQUIVALENTE", "EQUIVALENTES", "ORIGINAL", "ORIGINAIS",
+    }
+    return "?" in query or any(token in question_terms for token in qnorm.split())
+
+
+def answer_catalog_question(query: str, results: list[dict]) -> dict | None:
+    """Answer only from catalog evidence already found by the deterministic search."""
+    if not results or not is_catalog_question(query) or not os.environ.get("OPENAI_API_KEY"):
+        return None
+    evidence_items = results[:5]
+    evidence = []
+    allowed_codes = set()
+    for item in evidence_items:
+        code = str(item.get("code", "")).upper()
+        allowed_codes.add(code)
+        evidence.append(
+            f"CÓDIGO: {code}\n"
+            f"FABRICANTE: {item.get('manufacturer', '')}\n"
+            f"EDIÇÃO: {item.get('edition', '')}\n"
+            f"PÁGINAS: {', '.join(map(str, item.get('pages', [])))}\n"
+            f"TEXTO DO CATÁLOGO: {str(item.get('text', ''))[:3500]}"
+        )
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(timeout=15.0, max_retries=1)
+        response = client.responses.parse(
+            model=os.environ.get("OPENAI_MODEL", "gpt-5-mini"),
+            store=False,
+            input=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Responda como assistente de balcão de autopeças usando EXCLUSIVAMENTE as evidências "
+                        "dos catálogos fornecidas. Nunca use conhecimento externo, nunca deduza especificações "
+                        "e nunca invente compatibilidade. Dê uma resposta direta e curta em português do Brasil. "
+                        "Se a informação pedida não estiver escrita explicitamente nas evidências, responda que "
+                        "ela não consta nos catálogos consultados e marque supported como false. Em source_codes, "
+                        "inclua somente códigos presentes nas evidências que sustentam a resposta."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"PERGUNTA: {query[:500]}\n\nEVIDÊNCIAS:\n\n" + "\n\n---\n\n".join(evidence),
+                },
+            ],
+            text_format=CatalogAnswer,
+        )
+        parsed = response.output_parsed
+        if not parsed or not parsed.answer.strip():
+            return None
+        source_codes = [code.upper() for code in parsed.source_codes if code.upper() in allowed_codes]
+        sources = []
+        for item in evidence_items:
+            if item.get("code", "").upper() in source_codes:
+                sources.append({
+                    "code": item.get("code"),
+                    "manufacturer": item.get("manufacturer"),
+                    "edition": item.get("edition"),
+                    "pages": item.get("pages", []),
+                })
+        return {
+            "text": parsed.answer.strip()[:1000],
+            "supported": bool(parsed.supported and sources),
+            "sources": sources,
+        }
+    except Exception:
+        app.logger.exception("Falha ao responder pergunta com os dados do catálogo")
+        return None
+
+
 def interpret_catalog_question(query: str) -> CatalogQuestion | None:
     """Use AI only to convert a natural question into catalog search terms."""
     if not os.environ.get("OPENAI_API_KEY"):
@@ -271,6 +354,7 @@ def interpret_catalog_question(query: str) -> CatalogQuestion | None:
         client = OpenAI(timeout=12.0, max_retries=1)
         response = client.responses.parse(
             model=os.environ.get("OPENAI_MODEL", "gpt-5-mini"),
+            store=False,
             input=[
                 {
                     "role": "system",
@@ -410,12 +494,14 @@ def api_search():
         ai_query = interpreted.normalized_query.strip() if interpreted else ""
         if ai_query and normalize(ai_query) != normalize(query):
             results = search_catalog(ai_query)
+    direct_answer = answer_catalog_question(query, results)
     return jsonify({
         "query": query,
         "results": results,
         "catalogs": len(CATALOGS),
         "ai_used": interpreted is not None,
         "interpreted_query": interpreted.normalized_query if interpreted else None,
+        "answer": direct_answer,
     })
 
 

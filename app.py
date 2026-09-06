@@ -294,9 +294,44 @@ def is_catalog_question(query: str) -> bool:
 
 def answer_catalog_question(query: str, results: list[dict]) -> dict | None:
     """Answer only from catalog evidence already found by the deterministic search."""
-    if not results or not is_catalog_question(query) or not os.environ.get("OPENAI_API_KEY"):
+    if not results or not is_catalog_question(query):
         return None
     evidence_items = results[:5]
+
+    def sources_for(codes: list[str]) -> list[dict]:
+        selected = {code.upper() for code in codes}
+        return [
+            {
+                "code": item.get("code"),
+                "manufacturer": item.get("manufacturer"),
+                "edition": item.get("edition"),
+                "pages": item.get("pages", []),
+            }
+            for item in evidence_items
+            if str(item.get("code", "")).upper() in selected
+        ]
+
+    # Especificações objetivas são extraídas diretamente do catálogo.
+    # Assim, continuam funcionando mesmo se a API estiver temporariamente indisponível.
+    qnorm = normalize(query)
+    primary = evidence_items[0]
+    primary_text = normalize(str(primary.get("text", "")))
+    primary_code = str(primary.get("code", "")).upper()
+    if "DENTE" in qnorm or "DENTES" in qnorm:
+        teeth = re.search(r"(?<!\d)(\d{1,3})\s+DENTES?\b", primary_text)
+        if teeth:
+            detail = f"A peça {primary_code} possui {teeth.group(1)} dentes"
+            link = re.search(r"\bELO\s+(\d+(?:[.,]\d+)?)\s*MM\b", primary_text)
+            if link:
+                detail += f" e elo de {link.group(1).replace('.', ',')} mm"
+            return {
+                "text": detail + ".",
+                "supported": True,
+                "sources": sources_for([primary_code]),
+            }
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        return None
     evidence = []
     allowed_codes = set()
     for item in evidence_items:
@@ -339,15 +374,7 @@ def answer_catalog_question(query: str, results: list[dict]) -> dict | None:
         if not parsed or not parsed.answer.strip():
             return None
         source_codes = [code.upper() for code in parsed.source_codes if code.upper() in allowed_codes]
-        sources = []
-        for item in evidence_items:
-            if item.get("code", "").upper() in source_codes:
-                sources.append({
-                    "code": item.get("code"),
-                    "manufacturer": item.get("manufacturer"),
-                    "edition": item.get("edition"),
-                    "pages": item.get("pages", []),
-                })
+        sources = sources_for(source_codes)
         return {
             "text": parsed.answer.strip()[:1000],
             "supported": bool(parsed.supported and sources),

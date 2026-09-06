@@ -44,6 +44,19 @@ def words_in(words, x0, x1):
     return clean(" ".join(w[4] for w in sorted(words, key=lambda item: item[0]) if x0 <= w[0] < x1))
 
 
+def words_in_reading_order(words, x0, x1):
+    selected = [w for w in words if x0 <= w[0] < x1]
+    return clean(" ".join(w[4] for w in sorted(selected, key=lambda item: (round(item[1] / 2), item[0]))))
+
+
+def words_in_lines(words, x0, x1):
+    lines = defaultdict(list)
+    for word in words:
+        if x0 <= word[0] < x1:
+            lines[round(word[1] / 2)].append(word)
+    return " | ".join(clean(" ".join(w[4] for w in sorted(line, key=lambda item: item[0]))) for _, line in sorted(lines.items()))
+
+
 def normalize_table_year(value: str) -> str:
     value = value.replace("‐", "-").replace("–", "-").replace("—", "-")
     numbers = re.findall(r"\d{2,4}", value)
@@ -56,6 +69,57 @@ def normalize_table_year(value: str) -> str:
     if numbers:
         return f"{int(numbers[0]) % 100:02d}"
     return clean(value)
+
+
+def normalize_application_years(value: str) -> str:
+    value = value.replace("–", "-").replace("—", "-").replace("‐", "-")
+    value = re.sub(r"<?(\d{2})-(\d{2})>?", r"\1/\2", value)
+    value = re.sub(r"(\d{4})\s*-+>", lambda m: f"{int(m.group(1)) % 100:02d}/...", value)
+    return clean(value)
+
+
+def extract_transmission_catalog(doc: fitz.Document, manufacturer: str, edition: str) -> list[dict]:
+    """Extrai fichas verticais de filtros para câmbio automático Wega."""
+    code_pattern = re.compile(r"^(?:WFC|WEOC|WOEC)-\d{3}$", re.I)
+    products: dict[str, dict] = {}
+    for page_number, page in enumerate(doc, 1):
+        words = page.get_text("words")
+        codes = sorted(
+            [(w[1], w[4].upper()) for w in words if w[0] < 90 and code_pattern.match(w[4]) and w[1] > 105],
+            key=lambda item: item[0],
+        )
+        if not codes:
+            continue
+        centers = [y for y, _ in codes]
+        for index, (center, code) in enumerate(codes):
+            top = 105 if index == 0 else (centers[index - 1] + center) / 2
+            bottom = 790 if index + 1 == len(codes) else (center + centers[index + 1]) / 2
+            block = [w for w in words if top <= w[1] < bottom]
+            gear = words_in_reading_order(block, 90, 150)
+            application = normalize_application_years(words_in_lines(block, 150, 340))
+            conversion = words_in_reading_order(block, 340, 470)
+            notes = words_in_reading_order(block, 470, 570)
+            if not application:
+                continue
+            text = clean(
+                f"Filtro de Câmbio Automático. Câmbio: {gear}. "
+                f"Aplicações: {application}. Conversões: {conversion}. {notes}"
+            )
+            record = products.setdefault(code, {
+                "code": code,
+                "manufacturer": manufacturer,
+                "edition": edition,
+                "category": "Filtro de Câmbio Automático",
+                "pages": [],
+                "text": "",
+            })
+            record["pages"].append(page_number)
+            record["text"] = clean(record["text"] + " " + text)
+    rows = list(products.values())
+    for row in rows:
+        row["pages"] = sorted(set(row["pages"]))
+        row["search"] = norm(" ".join([row["code"], row["manufacturer"], row["category"], row["text"]]))
+    return sorted(rows, key=lambda row: row["code"])
 
 
 def extract_application_table(doc: fitz.Document, manufacturer: str, edition: str) -> list[dict]:
@@ -127,6 +191,8 @@ def candidates(page: fitz.Page):
 
 def extract(pdf_path: Path, manufacturer: str, edition: str) -> list[dict]:
     doc = fitz.open(pdf_path)
+    if any("CÂMBIO" in page.get_text("text") and "APLICAÇÃO" in page.get_text("text") for page in doc):
+        return extract_transmission_catalog(doc, manufacturer, edition)
     if any("Montadora" in page.get_text("text") and "Filtro" in page.get_text("text") for page in doc):
         return extract_application_table(doc, manufacturer, edition)
     collected: dict[str, dict] = {}

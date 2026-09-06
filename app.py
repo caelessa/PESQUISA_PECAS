@@ -315,6 +315,9 @@ PART_INTENTS = {
     "REGULADOR": ("REGULADOR", "REGULADORES"),
     "ROLAMENTO": ("ROLAMENTO", "ROLAMENTOS"),
     "JUNTA": ("JUNTA", "JUNTAS"),
+    "PALHETA": ("PALHETA", "PALHETAS"),
+    "PASTILHA": ("PASTILHA", "PASTILHAS"),
+    "SAPATA": ("SAPATA", "SAPATAS"),
 }
 PART_RESPONSE_NAMES = {
     "TRIZETA": ("trizeta", "trizetas"),
@@ -325,6 +328,15 @@ PART_RESPONSE_NAMES = {
     "REGULADOR": ("regulador", "reguladores"),
     "ROLAMENTO": ("rolamento", "rolamentos"),
     "JUNTA": ("junta", "juntas"),
+    "PALHETA": ("palheta", "palhetas"),
+    "PASTILHA": ("pastilha", "pastilhas"),
+    "SAPATA": ("sapata", "sapatas"),
+}
+
+SPEC_QUERY_WORDS = {
+    "DENTE", "DENTES", "ELO", "PRESSAO", "BAR", "FOLGA", "ALTURA", "DIAMETRO",
+    "COMPRIMENTO", "LARGURA", "ROSCA", "MEDIDA", "MEDIDAS", "MILIMETRO",
+    "MILIMETROS", "MM", "TEM", "TENHA", "COM", "E",
 }
 
 
@@ -338,6 +350,26 @@ def extract_specifications(value: str) -> dict[str, str]:
                 found[name] = match.group(1).replace(".", ",")
                 break
     return found
+
+
+def specification_context_query(query: str, requested: dict[str, str], requested_part: str) -> str:
+    """Keep application constraints left beside a technical specification.
+
+    Example: ``trizeta 22 dentes para Palio 2012`` becomes ``PALIO 2012``.
+    The returned terms are later evaluated together against the same catalog product.
+    """
+    part_words = {word for words in PART_INTENTS.values() for word in words}
+    spec_values = {normalize(value).replace(",", ".") for value in requested.values()}
+    context = []
+    for token in normalize(query).split():
+        canonical = ALIASES.get(token, token)
+        numeric_unit = re.fullmatch(r"(\d+(?:[.,]\d+)?)(?:MM|BAR)?", canonical)
+        if canonical in STOPWORDS or canonical in SPEC_QUERY_WORDS or canonical in part_words:
+            continue
+        if numeric_unit and numeric_unit.group(1).replace(",", ".") in spec_values:
+            continue
+        context.append(canonical)
+    return " ".join(context)
 
 
 def own_product_blocks(item: dict, known_codes: set[str]) -> list[str]:
@@ -365,6 +397,7 @@ def search_product_specifications(query: str, limit: int = 12) -> list[dict] | N
     requested_part = next((name for name, terms in PART_INTENTS.items() if any(term in qnorm.split() for term in terms)), None)
     if not requested or not requested_part:
         return None
+    context_query = specification_context_query(query, requested, requested_part)
     canonical = {str(item.get("code", "")).upper(): item for item in ITEMS}
     known_codes = set(canonical)
     results = []
@@ -375,14 +408,25 @@ def search_product_specifications(query: str, limit: int = 12) -> list[dict] | N
         matched = False
         for block in own_product_blocks(item, known_codes):
             available = extract_specifications(block[:1200])
-            if all(available.get(name) == value for name, value in requested.items()):
+            specifications_match = all(available.get(name) == value for name, value in requested.items())
+            context_matches = True
+            if context_query:
+                context_item = {
+                    "code": item.get("code", ""),
+                    "category": item.get("category", ""),
+                    "text": block,
+                    "search": normalize(f"{item.get('category', '')} {block}"),
+                }
+                context_matches = token_score(context_query, context_item)[0] > 0
+            if specifications_match and context_matches:
                 matched = True
                 break
         if matched:
             results.append({
                 **item,
                 "score": 900,
-                "matches": [SPEC_LABELS[name](value) for name, value in requested.items()],
+                "matches": [SPEC_LABELS[name](value) for name, value in requested.items()]
+                           + ([f"aplicação: {context_query}"] if context_query else []),
             })
     results.sort(key=lambda item: item["code"])
     return results[:limit]

@@ -10,9 +10,16 @@
     <p class="eyebrow">CONSULTA NO BALCÃO</p>
     <h1>O que você precisa encontrar?</h1>
     <form id="search-form" class="search-box">
-      <input id="query" autocomplete="off" placeholder="Ex.: bieleta dianteira Argo 2018" aria-label="Pergunta ou código da peça" autofocus>
-      <button type="submit">Pesquisar</button>
+      <div class="query-row">
+        <input id="query" autocomplete="off" placeholder="Ex.: bieleta dianteira Argo 2018" aria-label="Pergunta ou código da peça" autofocus>
+        <button id="voice-button" class="voice-button" type="button" aria-label="Ditar pesquisa" title="Ditar pesquisa" aria-pressed="false">
+          <span class="microphone-icon" aria-hidden="true"></span>
+          <span class="voice-label">Ditar</span>
+        </button>
+      </div>
+      <button class="search-button" type="submit">Pesquisar</button>
     </form>
+    <p id="voice-status" class="voice-status" role="status" aria-live="polite" hidden></p>
     <div class="examples" aria-label="Exemplos de pesquisa">
       <button data-query="BI41104">BI41104</button>
       <button data-query="bieleta dianteira Argo 2018">Argo 2018</button>

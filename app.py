@@ -123,6 +123,8 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
         "FILTRO DO COMBUSTIVEL": "FILTRO DO COMBUSTIVEL",
         "FILTRO DE COMBUSTIVEL": "FILTRO DO COMBUSTIVEL",
         "FILTRO DE CABINE": "FILTRO DE CABINE",
+        "FILTRO DE CAMBIO": "FILTRO DE CAMBIO",
+        "FILTRO DO CAMBIO": "FILTRO DE CAMBIO",
     }
     requested_category = next((target for phrase, target in category_intents.items() if phrase in qnorm), None)
     if requested_category and requested_category not in category:
@@ -278,6 +280,18 @@ def toggle_catalog(catalog_id):
     db.session.commit()
     refresh_cache()
     flash("Status do catálogo atualizado.", "success")
+    return redirect(url_for("admin_catalogs"))
+
+
+@app.post("/admin/catalogs/<int:catalog_id>/delete")
+@admin_required
+def delete_catalog(catalog_id):
+    catalog = db.get_or_404(Catalog, catalog_id)
+    name = f"{catalog.manufacturer} {catalog.edition}"
+    db.session.delete(catalog)
+    db.session.commit()
+    refresh_cache()
+    flash(f"Catálogo {name} excluído. Você já pode importá-lo novamente.", "success")
     return redirect(url_for("admin_catalogs"))
 
 

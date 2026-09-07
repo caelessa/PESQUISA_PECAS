@@ -234,6 +234,11 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
         active_synonyms,
     )
     category = normalize(item.get("category", ""))
+    requested_part = detect_part_intent(qnorm)
+    if requested_part:
+        item_kind = normalize(f"{item.get('category', '')} {item.get('text', '')[:180]}")
+        if not any(contains_token(item_kind, term) for term in PART_INTENTS[requested_part]):
+            return 0, []
     category_intents = {
         "FILTRO DO AR": "FILTRO DO AR",
         "FILTRO DE AR": "FILTRO DO AR",
@@ -377,6 +382,20 @@ SPEC_QUERY_WORDS = {
     "MILIMETROS", "MM", "TEM", "TENHA", "COM", "E",
 }
 
+
+def detect_part_intent(value: str) -> str | None:
+    """Identify the requested part while prioritizing compound part names."""
+    qnorm = normalize_search_language(value)
+    tokens = set(qnorm.split())
+    priority = (
+        "CABO", "TRIZETA", "PASTILHA", "SAPATA", "PALHETA", "FILTRO",
+        "BOBINA", "VELA", "REGULADOR", "ROLAMENTO", "JUNTA",
+    )
+    for name in priority:
+        if any(term in tokens for term in PART_INTENTS.get(name, ())):
+            return name
+    return None
+
 # Campos técnicos presentes em catálogos estruturados, como o da Fremax.
 # As frases mais específicas vêm primeiro para que "espessura mínima" não seja
 # confundida com o campo genérico "espessura".
@@ -485,7 +504,7 @@ def search_product_specifications(query: str, limit: int = 12) -> list[dict] | N
     """Reverse-search catalog products using one or more explicit technical specifications."""
     qnorm = normalize_search_language(query)
     requested = extract_specifications(query)
-    requested_part = next((name for name, terms in PART_INTENTS.items() if any(term in qnorm.split() for term in terms)), None)
+    requested_part = detect_part_intent(qnorm)
     if not requested or not requested_part:
         return None
     context_query = specification_context_query(query, requested, requested_part)
@@ -563,7 +582,7 @@ def answer_catalog_question(query: str, results: list[dict]) -> dict | None:
     primary_text = normalize(str(primary.get("text", "")))
     primary_code = str(primary.get("code", "")).upper()
     requested_specs = extract_specifications(query)
-    requested_part = next((name for name, terms in PART_INTENTS.items() if any(term in qnorm.split() for term in terms)), None)
+    requested_part = detect_part_intent(qnorm)
     requested_code = any(contains_token(qnorm, str(item.get("code", "")).upper()) for item in all_result_items)
     technical_request = requested_technical_field(query)
     if technical_request and requested_code:

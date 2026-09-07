@@ -79,6 +79,15 @@ with app.app_context():
 
 STOPWORDS = {"A", "AS", "O", "OS", "DE", "DA", "DO", "DAS", "DOS", "EM", "PARA", "QUAL", "QUAIS", "UMA", "UM", "NO", "NA", "NOS", "NAS", "ONDE", "AONDE", "SERVE", "SERVEM", "APLICA", "APLICAM", "APLICACAO", "APLICACOES", "USADO", "USADA", "UTILIZADO", "UTILIZADA", "CARRO", "CARROS", "VEICULO", "VEICULOS", "PRECISO", "PECA", "AUTHOMIX", "NAKATA", "COFAP", "TRW", "AXIOS", "PDX"}
 ALIASES = {"DIANTEIRO": "DIANTEIRA", "TRASEIRO": "TRASEIRA", "ESQUERDO": "ESQUERDA", "DIREITO": "DIREITA"}
+SEARCH_SYNONYM_GROUPS = (
+    ("CABO DE VELA", "CABOS DE VELA", "CABO DE IGNICAO", "CABOS DE IGNICAO", "JOGO DE CABOS", "JOGO DE CABO"),
+    ("PALHETA", "LIMPADOR DE PARA-BRISA", "LIMPADOR DO PARA-BRISA", "PALHETA DO LIMPADOR"),
+    ("FILTRO DE CABINE", "FILTRO DO AR-CONDICIONADO", "FILTRO DE AR-CONDICIONADO", "FILTRO ANTIPOLEN"),
+    ("JUNTA HOMOCINETICA", "HOMOCINETICA"),
+    ("SAPATA DE FREIO", "PATIM DE FREIO"),
+    ("DISCO DE FREIO", "DISCO FREIO"),
+    ("PASTILHA DE FREIO", "PASTILHA FREIO"),
+)
 YEAR_RE = re.compile(r"(?<!\d)(\d{2})/(\d{2}|\.\.\.)(?!\d)")
 EXACT_YEAR_RE = re.compile(r"(?<![\d./])(\d{2})(?![\d./])")
 FULL_YEAR_RANGE_RE = re.compile(
@@ -111,6 +120,20 @@ class CatalogAnswer(BaseModel):
 def normalize(value: str) -> str:
     value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().upper()
     return re.sub(r"[^A-Z0-9./-]+", " ", value).strip()
+
+
+def normalize_search_language(value: str) -> str:
+    """Normalize common counter-sales synonyms to one catalog vocabulary."""
+    text = normalize(value)
+    for group in SEARCH_SYNONYM_GROUPS:
+        canonical = normalize(group[0])
+        for synonym in sorted((normalize(term) for term in group), key=len, reverse=True):
+            text = re.sub(
+                rf"(?<![A-Z0-9]){re.escape(synonym)}(?![A-Z0-9])",
+                canonical,
+                text,
+            )
+    return text
 
 
 def validate_prepared_catalog(payload, manufacturer: str, edition: str) -> list[dict]:
@@ -193,8 +216,8 @@ def admin_required(view):
 
 
 def token_score(query: str, item: dict) -> tuple[int, list[str]]:
-    qnorm = normalize(query)
-    haystack = item.get("search", normalize(item.get("text", "")))
+    qnorm = normalize_search_language(query)
+    haystack = normalize_search_language(item.get("search", normalize(item.get("text", ""))))
     category = normalize(item.get("category", ""))
     category_intents = {
         "FILTRO DO AR": "FILTRO DO AR",
@@ -414,7 +437,7 @@ def specification_context_query(query: str, requested: dict[str, str], requested
     part_words = {word for words in PART_INTENTS.values() for word in words}
     spec_values = {normalize(value).replace(",", ".") for value in requested.values()}
     context = []
-    for token in normalize(query).split():
+    for token in normalize_search_language(query).split():
         canonical = ALIASES.get(token, token)
         numeric_unit = re.fullmatch(r"(\d+(?:[.,]\d+)?)(?:MM|BAR)?", canonical)
         if canonical in STOPWORDS or canonical in SPEC_QUERY_WORDS or canonical in part_words:
@@ -445,7 +468,7 @@ def own_product_blocks(item: dict, known_codes: set[str]) -> list[str]:
 
 def search_product_specifications(query: str, limit: int = 12) -> list[dict] | None:
     """Reverse-search catalog products using one or more explicit technical specifications."""
-    qnorm = normalize(query)
+    qnorm = normalize_search_language(query)
     requested = extract_specifications(query)
     requested_part = next((name for name, terms in PART_INTENTS.items() if any(term in qnorm.split() for term in terms)), None)
     if not requested or not requested_part:

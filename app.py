@@ -122,11 +122,17 @@ def normalize(value: str) -> str:
     return re.sub(r"[^A-Z0-9./-]+", " ", value).strip()
 
 
-def normalize_search_language(value: str) -> str:
-    """Normalize common counter-sales synonyms to one catalog vocabulary."""
+def normalize_search_language(value: str, active_canonicals: set[str] | None = None) -> str:
+    """Normalize counter-sales synonyms, optionally only for requested groups.
+
+    Restricting the catalog-side work to the synonym present in the query keeps
+    searches fast even when several large catalogs are active.
+    """
     text = normalize(value)
     for group in SEARCH_SYNONYM_GROUPS:
         canonical = normalize(group[0])
+        if active_canonicals is not None and canonical not in active_canonicals:
+            continue
         for synonym in sorted((normalize(term) for term in group), key=len, reverse=True):
             text = re.sub(
                 rf"(?<![A-Z0-9]){re.escape(synonym)}(?![A-Z0-9])",
@@ -217,7 +223,16 @@ def admin_required(view):
 
 def token_score(query: str, item: dict) -> tuple[int, list[str]]:
     qnorm = normalize_search_language(query)
-    haystack = normalize_search_language(item.get("search", normalize(item.get("text", ""))))
+    active_synonyms = {
+        normalize(group[0])
+        for group in SEARCH_SYNONYM_GROUPS
+        if contains_token(qnorm, normalize(group[0]).split()[0])
+        and normalize(group[0]) in qnorm
+    }
+    haystack = normalize_search_language(
+        item.get("search", normalize(item.get("text", ""))),
+        active_synonyms,
+    )
     category = normalize(item.get("category", ""))
     category_intents = {
         "FILTRO DO AR": "FILTRO DO AR",

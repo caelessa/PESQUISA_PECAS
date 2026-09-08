@@ -1,7 +1,19 @@
 {% extends "base.html" %}
 {% block body %}
 <header class="topbar">
-  <div class="brand"><span class="brand-mark small">A</span><div><strong>Consulta de Autopeças</strong><span>Catálogo AuthoMix · Abril/2022</span></div></div>
+  <div class="brand">
+    <span class="brand-mark small">A</span>
+    <div>
+      <strong>Consulta de Autopeças</strong>
+      <span class="catalog-list">
+        {% if catalogs %}
+          Catálogos: {% for manufacturer, edition in catalogs %}{{ manufacturer }}{% if edition %} · {{ edition }}{% endif %}{% if not loop.last %} | {% endif %}{% endfor %}
+        {% else %}
+          Nenhum catálogo ativo
+        {% endif %}
+      </span>
+    </div>
+  </div>
   <nav class="top-actions">{% if is_admin %}<a href="{{ url_for('admin_catalogs') }}">Catálogos</a>{% endif %}<a class="logout" href="{{ url_for('logout') }}">Sair</a></nav>
 </header>
 
@@ -29,7 +41,7 @@
 
   <section id="status" class="status-card">
     <div><strong>{{ total }}</strong><span>itens extraídos</span></div>
-    <p>{{ catalog_total }} catálogo ativo. Pesquise pelo código, peça, veículo, ano ou equivalente.</p>
+    <p>{{ catalog_total }} catálogo{% if catalog_total != 1 %}s{% endif %} ativo{% if catalog_total != 1 %}s{% endif %}. Pesquise pelo código, peça, veículo, ano ou equivalente.</p>
   </section>
 
   <section id="results" class="results" aria-live="polite"></section>

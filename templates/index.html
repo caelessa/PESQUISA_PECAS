@@ -5,7 +5,7 @@
     <span class="brand-mark small">A</span>
     <div>
       <strong>Consulta de Autopeças</strong>
-      <span class="catalog-list">
+      <span class="catalog-summary">
         {% if catalogs %}
           Catálogos: {% for manufacturer, edition in catalogs %}{{ manufacturer }}{% if edition %} · {{ edition }}{% endif %}{% if not loop.last %} | {% endif %}{% endfor %}
         {% else %}

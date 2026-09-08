@@ -327,6 +327,67 @@ def search_catalog(query: str, limit: int = 12):
     return [{**item, "score": score, "matches": matches[:6]} for score, item, matches in ranked[:limit]]
 
 
+APPLICATION_SECTION_RE = re.compile(
+    r"\bAPLICA[CÇ][OÕ]ES(?:\s+DETALHADAS)?\s*:\s*(.*?)(?=\s+EQUIVAL[EÊ]NCIAS(?:\s+E\s+REFER[EÊ]NCIAS(?:\s+ORIGINAIS)?)?\s*:|$)",
+    re.I,
+)
+
+
+def application_focus_tokens(query: str) -> tuple[list[str], list[int]]:
+    """Return vehicle/application terms and explicit years from a search query."""
+    qnorm = normalize_search_language(query)
+    ignored = set(STOPWORDS) | set(GENERIC_TERMS) | set(SPEC_QUERY_WORDS)
+    ignored.update({
+        "AUTOPECA", "AUTOPECAS", "ANO", "ANOS", "MOTOR", "MODELO", "MARCA",
+        "FRENTE", "EIXO", "SISTEMA", "DIANTEIRA", "TRASEIRA", "DIREITA", "ESQUERDA",
+    })
+    for terms in PART_INTENTS.values():
+        ignored.update(terms)
+    years = [int(token) for token in qnorm.split() if token.isdigit() and len(token) == 4 and 1950 <= int(token) <= 2035]
+    tokens = []
+    for token in qnorm.split():
+        if token in ignored or (token.isdigit() and len(token) == 4):
+            continue
+        if len(token) < 2:
+            continue
+        tokens.append(token)
+    return list(dict.fromkeys(tokens)), years
+
+
+def focused_application_text(item: dict, query: str) -> str | None:
+    """Create a short display excerpt containing only matching application rows."""
+    text = str(item.get("text", ""))
+    section_match = APPLICATION_SECTION_RE.search(text)
+    if not section_match:
+        return None
+    focus_tokens, years = application_focus_tokens(query)
+    if not focus_tokens:
+        return None
+    matching = []
+    for segment in (piece.strip(" .") for piece in section_match.group(1).split("|")):
+        if not segment:
+            continue
+        normalized_segment = normalize_search_language(segment)
+        if not all(contains_token(normalized_segment, token) for token in focus_tokens):
+            continue
+        if years:
+            spans = year_spans(normalized_segment)
+            if not spans or not all(any(start <= year <= end for start, end in spans) for year in years):
+                continue
+        matching.append(segment)
+    if not matching:
+        return None
+    return "Aplicações correspondentes à pesquisa: " + " | ".join(matching)
+
+
+def focus_search_results(results: list[dict], query: str) -> list[dict]:
+    focused = []
+    for item in results:
+        display_text = focused_application_text(item, query)
+        focused.append({**item, **({"display_text": display_text} if display_text else {})})
+    return focused
+
+
 SPEC_PATTERNS = {
     "dentes": [r"(?<!\d)(\d{1,3})\s+DENTES?\b"],
     "elo": [r"\bELO\s+(\d+(?:[.,]\d+)?)\s*MM\b", r"(\d+(?:[.,]\d+)?)\s*MM\s+DE\s+ELO\b"],
@@ -823,13 +884,16 @@ def api_search():
     if len(query) < 2:
         return jsonify({"error": "Digite pelo menos dois caracteres."}), 400
     results = search_catalog(query)
+    effective_query = query
     interpreted = None
     if not results:
         interpreted = interpret_catalog_question(query)
         ai_query = interpreted.normalized_query.strip() if interpreted else ""
         if ai_query and normalize(ai_query) != normalize(query):
             results = search_catalog(ai_query)
+            effective_query = ai_query
     direct_answer = answer_catalog_question(query, results)
+    results = focus_search_results(results, effective_query)
     return jsonify({
         "query": query,
         "results": results,

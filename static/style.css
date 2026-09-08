@@ -12,3 +12,18 @@
 .brand div{min-width:0}
 .catalog-summary{display:block;max-width:min(72vw,900px);margin-top:4px;color:#d8e6f0!important;font-size:13px;font-weight:600;line-height:1.45}
 @media(max-width:640px){.topbar{min-height:68px}.catalog-summary{display:none}}
+
+/* Pesquisa estruturada de aplicações. */
+.search-modes{display:inline-flex;gap:4px;margin:0 0 18px;padding:4px;background:#e6eef5;border-radius:11px}
+.mode-button{border:0;border-radius:8px;padding:10px 16px;background:transparent;color:var(--muted);font-weight:800;cursor:pointer}
+.mode-button.active{background:#fff;color:var(--blue);box-shadow:0 2px 8px rgba(16,42,67,.12)}
+.application-form{display:grid;grid-template-columns:1.35fr 1.35fr .65fr 1fr;gap:12px;padding:18px;background:#fff;border:2px solid #c8d8e6;border-radius:15px;box-shadow:var(--shadow);text-align:left}
+.application-form label{display:grid;gap:7px;color:var(--navy);font-size:13px;font-weight:800}
+.application-form label small{color:var(--muted);font-weight:500}
+.application-form input{width:100%;min-width:0;border:1px solid #c8d8e6;border-radius:9px;padding:12px;font:inherit;color:var(--navy);outline:0}
+.application-form input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(22,119,255,.12)}
+.application-form .search-button{grid-column:1/-1;border:0;border-radius:10px;padding:13px 24px;background:var(--blue);color:#fff;font-weight:800;cursor:pointer}
+.application-form .search-button:hover{background:var(--blue-dark)}
+.description{white-space:pre-line}
+@media(max-width:760px){.application-form{grid-template-columns:1fr 1fr}.application-form .search-button{grid-column:1/-1}}
+@media(max-width:520px){.application-form{grid-template-columns:1fr}.application-form .search-button{grid-column:1}.search-modes{display:flex}.mode-button{flex:1;padding:9px 10px;font-size:14px}}

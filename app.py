@@ -806,7 +806,13 @@ def logout():
 @app.route("/")
 @logged_in
 def index():
-    return render_template("index.html", total=len(ITEMS), catalog_total=len(CATALOGS), is_admin=session.get("role") == "admin")
+    return render_template(
+        "index.html",
+        total=len(ITEMS),
+        catalog_total=len(CATALOGS),
+        catalogs=CATALOGS,
+        is_admin=session.get("role") == "admin",
+    )
 
 
 @app.route("/admin/catalogs", methods=["GET", "POST"])

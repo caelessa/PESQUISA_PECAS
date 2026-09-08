@@ -1,21 +1,70 @@
 const form = document.querySelector('#search-form');
+const applicationForm = document.querySelector('#application-form');
 const input = document.querySelector('#query');
+const partTypeInput = document.querySelector('#part-type');
+const vehicleInput = document.querySelector('#vehicle');
+const yearInput = document.querySelector('#vehicle-year');
+const engineInput = document.querySelector('#engine');
+const applicationModeButton = document.querySelector('#application-mode-button');
+const freeModeButton = document.querySelector('#free-mode-button');
 const results = document.querySelector('#results');
 const statusCard = document.querySelector('#status');
 const template = document.querySelector('#result-template');
 const voiceButton = document.querySelector('#voice-button');
 const voiceStatus = document.querySelector('#voice-status');
 
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SpeechRecognition =
+  window.SpeechRecognition || window.webkitSpeechRecognition;
+
 let recognition = null;
 let listening = false;
 let recognizedText = '';
 
+function setSearchMode(mode) {
+  const applicationMode = mode === 'application';
+
+  applicationForm.hidden = !applicationMode;
+  form.hidden = applicationMode;
+
+  applicationModeButton.classList.toggle('active', applicationMode);
+  freeModeButton.classList.toggle('active', !applicationMode);
+
+  applicationModeButton.setAttribute(
+    'aria-selected',
+    String(applicationMode)
+  );
+
+  freeModeButton.setAttribute(
+    'aria-selected',
+    String(!applicationMode)
+  );
+
+  voiceStatus.hidden = true;
+
+  if (applicationMode) {
+    partTypeInput.focus();
+  } else {
+    input.focus();
+  }
+}
+
+applicationModeButton.addEventListener('click', () => {
+  setSearchMode('application');
+});
+
+freeModeButton.addEventListener('click', () => {
+  setSearchMode('free');
+});
+
 function setVoiceState(active, message = '') {
   listening = active;
+
   voiceButton.classList.toggle('listening', active);
   voiceButton.setAttribute('aria-pressed', String(active));
-  voiceButton.querySelector('.voice-label').textContent = active ? 'Ouvindo…' : 'Ditar';
+
+  voiceButton.querySelector('.voice-label').textContent =
+    active ? 'Ouvindo…' : 'Ditar';
+
   voiceStatus.hidden = !message;
   voiceStatus.textContent = message;
 }
@@ -23,9 +72,12 @@ function setVoiceState(active, message = '') {
 if (!SpeechRecognition) {
   voiceButton.disabled = true;
   voiceButton.title = 'Ditado não disponível neste navegador';
-  voiceButton.querySelector('.voice-label').textContent = 'Indisponível';
+
+  voiceButton.querySelector('.voice-label').textContent =
+    'Indisponível';
 } else {
   recognition = new SpeechRecognition();
+
   recognition.lang = 'pt-BR';
   recognition.continuous = false;
   recognition.interimResults = true;
@@ -33,15 +85,24 @@ if (!SpeechRecognition) {
 
   recognition.addEventListener('start', () => {
     recognizedText = '';
-    setVoiceState(true, 'Ouvindo… diga a peça, a característica ou o veículo.');
+
+    setVoiceState(
+      true,
+      'Ouvindo… diga a peça, a característica ou o veículo.'
+    );
   });
 
   recognition.addEventListener('result', event => {
     let interim = '';
     let finalText = '';
 
-    for (let index = event.resultIndex; index < event.results.length; index += 1) {
-      const transcript = event.results[index][0].transcript.trim();
+    for (
+      let index = event.resultIndex;
+      index < event.results.length;
+      index += 1
+    ) {
+      const transcript =
+        event.results[index][0].transcript.trim();
 
       if (event.results[index].isFinal) {
         finalText += `${transcript} `;
@@ -50,22 +111,34 @@ if (!SpeechRecognition) {
       }
     }
 
-    if (finalText) recognizedText += finalText;
+    if (finalText) {
+      recognizedText += finalText;
+    }
+
     input.value = `${recognizedText}${interim}`.trim();
   });
 
   recognition.addEventListener('error', event => {
     const messages = {
-      'not-allowed': 'Permissão do microfone negada. Libere o microfone nas configurações do navegador.',
-      'audio-capture': 'Nenhum microfone foi encontrado neste aparelho.',
-      'no-speech': 'Não ouvi nenhuma fala. Clique no microfone e tente novamente.',
-      'network': 'O reconhecimento de voz está temporariamente indisponível.',
+      'not-allowed':
+        'Permissão do microfone negada. Libere o microfone nas configurações do navegador.',
+
+      'audio-capture':
+        'Nenhum microfone foi encontrado neste aparelho.',
+
+      'no-speech':
+        'Não ouvi nenhuma fala. Clique no microfone e tente novamente.',
+
+      'network':
+        'O reconhecimento de voz está temporariamente indisponível.'
     };
 
     recognizedText = '';
+
     setVoiceState(
       false,
-      messages[event.error] || 'Não foi possível reconhecer a fala. Tente novamente.'
+      messages[event.error] ||
+        'Não foi possível reconhecer a fala. Tente novamente.'
     );
   });
 
@@ -82,7 +155,9 @@ if (!SpeechRecognition) {
         : voiceStatus.textContent
     );
 
-    if (shouldSearch) form.requestSubmit();
+    if (shouldSearch) {
+      form.requestSubmit();
+    }
   });
 
   voiceButton.addEventListener('click', () => {
@@ -94,13 +169,18 @@ if (!SpeechRecognition) {
     try {
       recognition.start();
     } catch (error) {
-      setVoiceState(false, 'Aguarde um instante e tente novamente.');
+      setVoiceState(
+        false,
+        'Aguarde um instante e tente novamente.'
+      );
     }
   });
 }
 
 document.querySelectorAll('[data-query]').forEach(button => {
   button.addEventListener('click', () => {
+    setSearchMode('free');
+
     input.value = button.dataset.query;
     form.requestSubmit();
   });
@@ -115,29 +195,44 @@ function showMessage(title, message) {
   `;
 }
 
-form.addEventListener('submit', async event => {
-  event.preventDefault();
-
-  const query = input.value.trim();
-
-  if (listening && recognition) recognition.stop();
+async function performSearch(query) {
+  if (listening && recognition) {
+    recognition.stop();
+  }
 
   if (query.length < 2) {
-    return showMessage(
+    showMessage(
       'Digite sua pesquisa',
       'Use um código, veículo, peça, ano ou código equivalente.'
     );
+
+    return;
   }
 
-  results.innerHTML = '<div class="loading">Consultando o catálogo…</div>';
+  results.innerHTML =
+    '<div class="loading">Consultando o catálogo…</div>';
+
   statusCard.hidden = true;
 
   try {
     const response = await fetch('/api/search', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({query})
     });
+
+    const contentType =
+      response.headers.get('content-type') || '';
+
+    if (!contentType.includes('application/json')) {
+      throw new Error(
+        response.ok
+          ? 'Resposta inválida do servidor.'
+          : 'Servidor temporariamente indisponível. Tente novamente.'
+      );
+    }
 
     const data = await response.json();
 
@@ -148,19 +243,27 @@ form.addEventListener('submit', async event => {
     results.innerHTML = '';
 
     if (!data.results.length) {
-      return showMessage(
+      showMessage(
         'Nenhuma aplicação confirmada',
-        'Tente retirar algum detalhe ou pesquisar somente pelo código ou modelo do veículo.'
+        'Revise os campos, retire algum detalhe ou faça uma pesquisa livre pelo código.'
       );
+
+      return;
     }
 
     if (data.answer) {
       const answerCard = document.createElement('article');
+
       answerCard.className =
-        `answer-card ${data.answer.supported ? 'supported' : 'not-supported'}`;
+        `answer-card ${
+          data.answer.supported
+            ? 'supported'
+            : 'not-supported'
+        }`;
 
       const label = document.createElement('span');
       label.className = 'answer-label';
+
       label.textContent = data.answer.supported
         ? 'RESPOSTA CONFIRMADA NO CATÁLOGO'
         : 'INFORMAÇÃO NÃO LOCALIZADA';
@@ -170,46 +273,60 @@ form.addEventListener('submit', async event => {
 
       answerCard.append(label, answerText);
 
-      if (data.answer.sources && data.answer.sources.length) {
+      if (
+        data.answer.sources &&
+        data.answer.sources.length
+      ) {
         const source = document.createElement('small');
 
         source.textContent =
           'Fonte: ' +
-          data.answer.sources.map(item => {
-            const pages =
-              item.pages && item.pages.length
-                ? `, página${item.pages.length > 1 ? 's' : ''} ${item.pages.join(', ')}`
-                : '';
+          data.answer.sources
+            .map(item => {
+              const pages =
+                item.pages && item.pages.length
+                  ? `, página${
+                      item.pages.length > 1 ? 's' : ''
+                    } ${item.pages.join(', ')}`
+                  : '';
 
-            return `${item.manufacturer} ${item.edition} · ${item.code}${pages}`;
-          }).join(' | ');
+              return (
+                `${item.manufacturer} ${item.edition}` +
+                ` · ${item.code}${pages}`
+              );
+            })
+            .join(' | ');
 
         answerCard.appendChild(source);
       }
 
       results.appendChild(answerCard);
 
-      // Quando a pergunta técnica já foi respondida diretamente,
-      // não mostra novamente toda a aplicação abaixo.
-      if (data.answer.supported) return;
+      if (data.answer.supported) {
+        return;
+      }
     }
 
     const heading = document.createElement('div');
     heading.className = 'results-title';
 
     const count = document.createElement('strong');
+
     count.textContent =
-      `${data.results.length} resultado${data.results.length > 1 ? 's' : ''}`;
+      `${data.results.length} resultado` +
+      `${data.results.length > 1 ? 's' : ''}`;
 
     const context = document.createElement('span');
 
     if (
       data.ai_used &&
       data.interpreted_query &&
-      data.interpreted_query.toUpperCase() !== query.toUpperCase()
+      data.interpreted_query.toUpperCase() !==
+        query.toUpperCase()
     ) {
       context.textContent =
-        `para “${query}” · IA interpretou: “${data.interpreted_query}”`;
+        `para “${query}” · ` +
+        `IA interpretou: “${data.interpreted_query}”`;
     } else {
       context.textContent = `para “${query}”`;
     }
@@ -218,36 +335,103 @@ form.addEventListener('submit', async event => {
     results.appendChild(heading);
 
     data.results.forEach(item => {
-      const card = template.content.cloneNode(true);
+      const card =
+        template.content.cloneNode(true);
+
+      const resultCard =
+        card.querySelector('.result-card');
 
       if (item.display_text) {
-        card.querySelector('.result-card').classList.add('focused-result');
+        resultCard.classList.add('focused-result');
       }
 
-      card.querySelector('.manufacturer').textContent = item.manufacturer;
-      card.querySelector('.code').textContent = item.code;
+      card.querySelector('.manufacturer').textContent =
+        item.manufacturer;
 
-      // Exibe somente as aplicações relacionadas ao veículo pesquisado.
-      // O texto completo permanece disponível em detalhes.
-      const visibleDescription = item.display_text || item.text;
+      card.querySelector('.code').textContent =
+        item.code;
+
+      const visibleDescription =
+        item.display_text || item.text;
 
       card.querySelector('.description').textContent =
-        visibleDescription.replace(item.code, '').trim();
+        visibleDescription
+          .replace(item.code, '')
+          .replace(/\s*\|\s*/g, '\n')
+          .trim();
 
       card.querySelector('.category').textContent =
         item.category || 'Autopeças';
 
+      const pages =
+        Array.isArray(item.pages)
+          ? item.pages
+          : [];
+
       card.querySelector('.pages').textContent =
-        `Página${item.pages.length > 1 ? 's' : ''} ${item.pages.join(', ')}`;
+        pages.length
+          ? `Página${pages.length > 1 ? 's' : ''} ` +
+            pages.join(', ')
+          : 'Página não informada';
 
-      card.querySelector('.edition').textContent = item.edition;
+      card.querySelector('.edition').textContent =
+        item.edition || '';
 
-      // Mantém a aplicação completa dentro da área expansível.
-      card.querySelector('.raw-text').textContent = item.text;
+      card.querySelector('.raw-text').textContent =
+        item.text;
 
       results.appendChild(card);
     });
   } catch (error) {
-    showMessage('Não foi possível pesquisar', error.message);
+    showMessage(
+      'Não foi possível pesquisar',
+      error.message
+    );
   }
+}
+
+applicationForm.addEventListener('submit', event => {
+  event.preventDefault();
+
+  const partType = partTypeInput.value.trim();
+  const vehicle = vehicleInput.value.trim();
+  const year = yearInput.value.trim();
+  const engine = engineInput.value.trim();
+
+  if (!partType || !vehicle) {
+    showMessage(
+      'Preencha os campos principais',
+      'Informe pelo menos o tipo da peça e o veículo.'
+    );
+
+    return;
+  }
+
+  if (year && !/^(19|20)\d{2}$/.test(year)) {
+    yearInput.focus();
+
+    showMessage(
+      'Ano inválido',
+      'Digite o ano com quatro números, por exemplo: 2005.'
+    );
+
+    return;
+  }
+
+  const structuredQuery = [
+    partType,
+    vehicle,
+    year,
+    engine
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  performSearch(structuredQuery);
+});
+
+form.addEventListener('submit', event => {
+  event.preventDefault();
+
+  performSearch(input.value.trim());
 });

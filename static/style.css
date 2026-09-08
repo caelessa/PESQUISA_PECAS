@@ -10,5 +10,5 @@
 .topbar{height:auto;min-height:76px;padding-top:10px;padding-bottom:10px}
 .brand{min-width:0}
 .brand div{min-width:0}
-.catalog-list{max-width:min(72vw,900px);line-height:1.35}
-@media(max-width:640px){.topbar{min-height:68px}.catalog-list{display:none}}
+.catalog-summary{display:block;max-width:min(72vw,900px);margin-top:4px;color:#d8e6f0!important;font-size:13px;font-weight:600;line-height:1.45}
+@media(max-width:640px){.topbar{min-height:68px}.catalog-summary{display:none}}

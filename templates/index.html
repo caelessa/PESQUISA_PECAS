@@ -21,9 +21,35 @@
   <section class="search-panel">
     <p class="eyebrow">CONSULTA NO BALCÃO</p>
     <h1>O que você precisa encontrar?</h1>
-    <form id="search-form" class="search-box">
+
+    <div class="search-modes" role="tablist" aria-label="Tipo de pesquisa">
+      <button id="application-mode-button" class="mode-button active" type="button" role="tab" aria-selected="true">Aplicação por veículo</button>
+      <button id="free-mode-button" class="mode-button" type="button" role="tab" aria-selected="false">Pesquisa livre</button>
+    </div>
+
+    <form id="application-form" class="application-form">
+      <label>
+        <span>Tipo de peça</span>
+        <input id="part-type" autocomplete="off" placeholder="Ex.: cabo de vela" required autofocus>
+      </label>
+      <label>
+        <span>Veículo</span>
+        <input id="vehicle" autocomplete="off" placeholder="Ex.: Fox" required>
+      </label>
+      <label>
+        <span>Ano</span>
+        <input id="vehicle-year" inputmode="numeric" maxlength="4" pattern="(19|20)[0-9]{2}" placeholder="Ex.: 2005">
+      </label>
+      <label>
+        <span>Motor <small>opcional</small></span>
+        <input id="engine" autocomplete="off" placeholder="Ex.: 1.0 8V">
+      </label>
+      <button class="search-button" type="submit">Pesquisar aplicação</button>
+    </form>
+
+    <form id="search-form" class="search-box" hidden>
       <div class="query-row">
-        <input id="query" autocomplete="off" placeholder="Ex.: bieleta dianteira Argo 2018" aria-label="Pergunta ou código da peça" autofocus>
+        <input id="query" autocomplete="off" placeholder="Ex.: quantos dentes tem a trizeta TZ41624?" aria-label="Pergunta ou código da peça">
         <button id="voice-button" class="voice-button" type="button" aria-label="Ditar pesquisa" title="Ditar pesquisa" aria-pressed="false">
           <span class="microphone-icon" aria-hidden="true"></span>
           <span class="voice-label">Ditar</span>

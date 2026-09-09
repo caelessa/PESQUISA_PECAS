@@ -933,6 +933,7 @@ def delete_catalog(catalog_id):
 def api_search():
     payload = request.get_json(silent=True) or {}
     query = str(payload.get("query", "")).strip()
+    structured_search = payload.get("structured") is True
     if len(query) < 2:
         return jsonify({"error": "Digite pelo menos dois caracteres."}), 400
     raw_catalog_id = payload.get("catalog_id")
@@ -955,11 +956,16 @@ def api_search():
             effective_query = ai_query
     direct_answer = answer_catalog_question(query, results)
     results = focus_search_results(results, effective_query)
+    # Na ficha por veículo, só é seguro exibir um produto quando conseguimos
+    # confirmar veículo, motor/ano informados dentro da mesma aplicação.
+    if structured_search:
+        results = [item for item in results if item.get("display_text")]
     return jsonify({
         "query": query,
         "results": results,
         "catalogs": len(CATALOGS),
         "catalog_id": catalog_id,
+        "structured": structured_search,
         "ai_used": interpreted is not None,
         "interpreted_query": interpreted.normalized_query if interpreted else None,
         "answer": direct_answer,

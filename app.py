@@ -51,8 +51,12 @@ CATALOGS = []
 def refresh_cache():
     global ITEMS, CATALOGS
     rows = Catalog.query.filter_by(active=True).order_by(Catalog.id).all()
-    ITEMS = [item for catalog in rows for item in json.loads(catalog.data)]
-    CATALOGS = [(catalog.manufacturer, catalog.edition) for catalog in rows]
+    ITEMS = [
+        {**item, "_catalog_id": catalog.id}
+        for catalog in rows
+        for item in json.loads(catalog.data)
+    ]
+    CATALOGS = [(catalog.id, catalog.manufacturer, catalog.edition) for catalog in rows]
 
 
 def initialize_database():
@@ -312,12 +316,15 @@ def token_score(query: str, item: dict) -> tuple[int, list[str]]:
     return score, matches
 
 
-def search_catalog(query: str, limit: int = 12):
-    specification_results = search_product_specifications(query, limit)
+def search_catalog(query: str, limit: int = 12, catalog_id: int | None = None):
+    catalog_items = ITEMS if catalog_id is None else [
+        item for item in ITEMS if item.get("_catalog_id") == catalog_id
+    ]
+    specification_results = search_product_specifications(query, limit, catalog_items)
     if specification_results is not None:
         return specification_results
     ranked = []
-    for item in ITEMS:
+    for item in catalog_items:
         score, matches = token_score(query, item)
         if score > 0:
             ranked.append((score, item, matches))
@@ -333,7 +340,7 @@ APPLICATION_SECTION_RE = re.compile(
 )
 
 
-def application_focus_tokens(query: str) -> tuple[list[str], list[int]]:
+def application_focus_tokens(query: str, item: dict, product_text: str = "") -> tuple[list[str], list[int]]:
     """Return vehicle/application terms and explicit years from a search query."""
     qnorm = normalize_search_language(query)
     ignored = set(STOPWORDS) | set(GENERIC_TERMS) | set(SPEC_QUERY_WORDS)
@@ -343,6 +350,15 @@ def application_focus_tokens(query: str) -> tuple[list[str], list[int]]:
     })
     for terms in PART_INTENTS.values():
         ignored.update(terms)
+    # Tudo que identifica a própria peça deve ser retirado. O que sobra na
+    # pergunta são, em regra, marca/modelo/motor do veículo e o ano desejado.
+    product_identity = normalize_search_language(" ".join([
+        str(item.get("code", "")),
+        str(item.get("manufacturer", "")),
+        str(item.get("category", "")),
+        product_text,
+    ]))
+    ignored.update(product_identity.split())
     years = [int(token) for token in qnorm.split() if token.isdigit() and len(token) == 4 and 1950 <= int(token) <= 2035]
     tokens = []
     for token in qnorm.split():
@@ -358,13 +374,24 @@ def focused_application_text(item: dict, query: str) -> str | None:
     """Create a short display excerpt containing only matching application rows."""
     text = str(item.get("text", ""))
     section_match = APPLICATION_SECTION_RE.search(text)
-    if not section_match:
-        return None
-    focus_tokens, years = application_focus_tokens(query)
+    if section_match:
+        application_text = section_match.group(1)
+        product_text = text[:section_match.start()]
+    else:
+        # Catálogos antigos nem sempre possuem o título "Aplicações". Nesses
+        # casos pesquisamos o texto, mas retornamos apenas pequenos trechos.
+        application_text = text
+        product_text = " ".join([
+            str(item.get("code", "")),
+            str(item.get("manufacturer", "")),
+            str(item.get("category", "")),
+        ])
+    focus_tokens, years = application_focus_tokens(query, item, product_text)
     if not focus_tokens:
         return None
     matching = []
-    for segment in (piece.strip(" .") for piece in section_match.group(1).split("|")):
+    segments = [piece.strip(" .") for piece in application_text.split("|")]
+    for segment in segments:
         if not segment:
             continue
         normalized_segment = normalize_search_language(segment)
@@ -374,7 +401,24 @@ def focused_application_text(item: dict, query: str) -> str | None:
             spans = year_spans(normalized_segment)
             if not spans or not all(any(start <= year <= end for start, end in spans) for year in years):
                 continue
+        # Evita que um catálogo sem separadores volte a produzir uma página
+        # inteira. Mantém somente o contexto próximo ao veículo encontrado.
+        if len(segment) > 520:
+            positions = [
+                normalized_segment.find(token)
+                for token in focus_tokens
+                if normalized_segment.find(token) >= 0
+            ]
+            if positions:
+                normalized_position = min(positions)
+                ratio = normalized_position / max(len(normalized_segment), 1)
+                center = int(ratio * len(segment))
+                start = max(0, center - 170)
+                end = min(len(segment), center + 350)
+                segment = ("…" if start else "") + segment[start:end].strip(" .") + ("…" if end < len(segment) else "")
         matching.append(segment)
+        if len(matching) >= 8:
+            break
     if not matching:
         return None
     return "Aplicações correspondentes à pesquisa: " + " | ".join(matching)
@@ -561,7 +605,7 @@ def own_product_blocks(item: dict, known_codes: set[str]) -> list[str]:
     return blocks or [text]
 
 
-def search_product_specifications(query: str, limit: int = 12) -> list[dict] | None:
+def search_product_specifications(query: str, limit: int = 12, items: list[dict] | None = None) -> list[dict] | None:
     """Reverse-search catalog products using one or more explicit technical specifications."""
     qnorm = normalize_search_language(query)
     requested = extract_specifications(query)
@@ -569,7 +613,8 @@ def search_product_specifications(query: str, limit: int = 12) -> list[dict] | N
     if not requested or not requested_part:
         return None
     context_query = specification_context_query(query, requested, requested_part)
-    canonical = {str(item.get("code", "")).upper(): item for item in ITEMS}
+    source_items = ITEMS if items is None else items
+    canonical = {str(item.get("code", "")).upper(): item for item in source_items}
     known_codes = set(canonical)
     results = []
     for code, item in canonical.items():
@@ -886,17 +931,27 @@ def delete_catalog(catalog_id):
 @app.post("/api/search")
 @logged_in
 def api_search():
-    query = (request.get_json(silent=True) or {}).get("query", "").strip()
+    payload = request.get_json(silent=True) or {}
+    query = str(payload.get("query", "")).strip()
     if len(query) < 2:
         return jsonify({"error": "Digite pelo menos dois caracteres."}), 400
-    results = search_catalog(query)
+    raw_catalog_id = payload.get("catalog_id")
+    catalog_id = None
+    if raw_catalog_id not in (None, ""):
+        try:
+            catalog_id = int(raw_catalog_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Catálogo selecionado inválido."}), 400
+        if not any(active_id == catalog_id for active_id, _, _ in CATALOGS):
+            return jsonify({"error": "O catálogo selecionado não está ativo."}), 400
+    results = search_catalog(query, catalog_id=catalog_id)
     effective_query = query
     interpreted = None
     if not results:
         interpreted = interpret_catalog_question(query)
         ai_query = interpreted.normalized_query.strip() if interpreted else ""
         if ai_query and normalize(ai_query) != normalize(query):
-            results = search_catalog(ai_query)
+            results = search_catalog(ai_query, catalog_id=catalog_id)
             effective_query = ai_query
     direct_answer = answer_catalog_question(query, results)
     results = focus_search_results(results, effective_query)
@@ -904,6 +959,7 @@ def api_search():
         "query": query,
         "results": results,
         "catalogs": len(CATALOGS),
+        "catalog_id": catalog_id,
         "ai_used": interpreted is not None,
         "interpreted_query": interpreted.normalized_query if interpreted else None,
         "answer": direct_answer,

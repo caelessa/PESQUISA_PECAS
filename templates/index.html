@@ -7,7 +7,7 @@
       <strong>Consulta de Autopeças</strong>
       <span class="catalog-summary">
         {% if catalogs %}
-          Catálogos: {% for manufacturer, edition in catalogs %}{{ manufacturer }}{% if edition %} · {{ edition }}{% endif %}{% if not loop.last %} | {% endif %}{% endfor %}
+          Catálogos: {% for catalog_id, manufacturer, edition in catalogs %}{{ manufacturer }}{% if edition %} · {{ edition }}{% endif %}{% if not loop.last %} | {% endif %}{% endfor %}
         {% else %}
           Nenhum catálogo ativo
         {% endif %}
@@ -21,6 +21,16 @@
   <section class="search-panel">
     <p class="eyebrow">CONSULTA NO BALCÃO</p>
     <h1>O que você precisa encontrar?</h1>
+
+    <label class="catalog-filter">
+      <span>Pesquisar em</span>
+      <select id="catalog-select">
+        <option value="">Todos os catálogos</option>
+        {% for catalog_id, manufacturer, edition in catalogs %}
+          <option value="{{ catalog_id }}">{{ manufacturer }}{% if edition %} — {{ edition }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
 
     <div class="search-modes" role="tablist" aria-label="Tipo de pesquisa">
       <button id="application-mode-button" class="mode-button active" type="button" role="tab" aria-selected="true">Aplicação por veículo</button>

@@ -27,3 +27,10 @@
 .description{white-space:pre-line}
 @media(max-width:760px){.application-form{grid-template-columns:1fr 1fr}.application-form .search-button{grid-column:1/-1}}
 @media(max-width:520px){.application-form{grid-template-columns:1fr}.application-form .search-button{grid-column:1}.search-modes{display:flex}.mode-button{flex:1;padding:9px 10px;font-size:14px}}
+
+/* Seleção do catálogo usado pela consulta. */
+.catalog-filter{width:min(520px,100%);margin:0 auto 16px;display:flex;align-items:center;gap:12px;text-align:left}
+.catalog-filter span{flex:0 0 auto;color:var(--navy);font-size:14px;font-weight:800}
+.catalog-filter select{min-width:0;flex:1;border:1px solid #b9cad8;border-radius:10px;padding:11px 38px 11px 12px;background:#fff;color:var(--navy);font:inherit;cursor:pointer;outline:0}
+.catalog-filter select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(22,119,255,.12)}
+@media(max-width:520px){.catalog-filter{align-items:stretch;flex-direction:column;gap:6px}}

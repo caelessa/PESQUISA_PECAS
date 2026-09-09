@@ -5,6 +5,7 @@ const partTypeInput = document.querySelector('#part-type');
 const vehicleInput = document.querySelector('#vehicle');
 const yearInput = document.querySelector('#vehicle-year');
 const engineInput = document.querySelector('#engine');
+const catalogSelect = document.querySelector('#catalog-select');
 const applicationModeButton = document.querySelector('#application-mode-button');
 const freeModeButton = document.querySelector('#free-mode-button');
 const results = document.querySelector('#results');
@@ -20,14 +21,39 @@ let recognition = null;
 let listening = false;
 let recognizedText = '';
 
+const savedCatalog = localStorage.getItem('selectedCatalog');
+
+if (
+  savedCatalog &&
+  [...catalogSelect.options].some(
+    option => option.value === savedCatalog
+  )
+) {
+  catalogSelect.value = savedCatalog;
+}
+
+catalogSelect.addEventListener('change', () => {
+  localStorage.setItem(
+    'selectedCatalog',
+    catalogSelect.value
+  );
+});
+
 function setSearchMode(mode) {
   const applicationMode = mode === 'application';
 
   applicationForm.hidden = !applicationMode;
   form.hidden = applicationMode;
 
-  applicationModeButton.classList.toggle('active', applicationMode);
-  freeModeButton.classList.toggle('active', !applicationMode);
+  applicationModeButton.classList.toggle(
+    'active',
+    applicationMode
+  );
+
+  freeModeButton.classList.toggle(
+    'active',
+    !applicationMode
+  );
 
   applicationModeButton.setAttribute(
     'aria-selected',
@@ -71,7 +97,8 @@ function setVoiceState(active, message = '') {
 
 if (!SpeechRecognition) {
   voiceButton.disabled = true;
-  voiceButton.title = 'Ditado não disponível neste navegador';
+  voiceButton.title =
+    'Ditado não disponível neste navegador';
 
   voiceButton.querySelector('.voice-label').textContent =
     'Indisponível';
@@ -115,7 +142,8 @@ if (!SpeechRecognition) {
       recognizedText += finalText;
     }
 
-    input.value = `${recognizedText}${interim}`.trim();
+    input.value =
+      `${recognizedText}${interim}`.trim();
   });
 
   recognition.addEventListener('error', event => {
@@ -217,10 +245,15 @@ async function performSearch(query) {
   try {
     const response = await fetch('/api/search', {
       method: 'POST',
+
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({query})
+
+      body: JSON.stringify({
+        query,
+        catalog_id: catalogSelect.value || null
+      })
     });
 
     const contentType =
@@ -237,7 +270,9 @@ async function performSearch(query) {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.error || 'Falha na consulta');
+      throw new Error(
+        data.error || 'Falha na consulta'
+      );
     }
 
     results.innerHTML = '';
@@ -245,14 +280,15 @@ async function performSearch(query) {
     if (!data.results.length) {
       showMessage(
         'Nenhuma aplicação confirmada',
-        'Revise os campos, retire algum detalhe ou faça uma pesquisa livre pelo código.'
+        'Tente retirar algum detalhe ou pesquisar somente pelo código ou modelo do veículo.'
       );
 
       return;
     }
 
     if (data.answer) {
-      const answerCard = document.createElement('article');
+      const answerCard =
+        document.createElement('article');
 
       answerCard.className =
         `answer-card ${
@@ -261,14 +297,19 @@ async function performSearch(query) {
             : 'not-supported'
         }`;
 
-      const label = document.createElement('span');
+      const label =
+        document.createElement('span');
+
       label.className = 'answer-label';
 
-      label.textContent = data.answer.supported
-        ? 'RESPOSTA CONFIRMADA NO CATÁLOGO'
-        : 'INFORMAÇÃO NÃO LOCALIZADA';
+      label.textContent =
+        data.answer.supported
+          ? 'RESPOSTA CONFIRMADA NO CATÁLOGO'
+          : 'INFORMAÇÃO NÃO LOCALIZADA';
 
-      const answerText = document.createElement('p');
+      const answerText =
+        document.createElement('p');
+
       answerText.textContent = data.answer.text;
 
       answerCard.append(label, answerText);
@@ -277,7 +318,8 @@ async function performSearch(query) {
         data.answer.sources &&
         data.answer.sources.length
       ) {
-        const source = document.createElement('small');
+        const source =
+          document.createElement('small');
 
         source.textContent =
           'Fonte: ' +
@@ -286,13 +328,16 @@ async function performSearch(query) {
               const pages =
                 item.pages && item.pages.length
                   ? `, página${
-                      item.pages.length > 1 ? 's' : ''
+                      item.pages.length > 1
+                        ? 's'
+                        : ''
                     } ${item.pages.join(', ')}`
                   : '';
 
               return (
-                `${item.manufacturer} ${item.edition}` +
-                ` · ${item.code}${pages}`
+                `${item.manufacturer} ` +
+                `${item.edition} · ` +
+                `${item.code}${pages}`
               );
             })
             .join(' | ');
@@ -307,16 +352,20 @@ async function performSearch(query) {
       }
     }
 
-    const heading = document.createElement('div');
+    const heading =
+      document.createElement('div');
+
     heading.className = 'results-title';
 
-    const count = document.createElement('strong');
+    const count =
+      document.createElement('strong');
 
     count.textContent =
       `${data.results.length} resultado` +
       `${data.results.length > 1 ? 's' : ''}`;
 
-    const context = document.createElement('span');
+    const context =
+      document.createElement('span');
 
     if (
       data.ai_used &&
@@ -342,25 +391,32 @@ async function performSearch(query) {
         card.querySelector('.result-card');
 
       if (item.display_text) {
-        resultCard.classList.add('focused-result');
+        resultCard.classList.add(
+          'focused-result'
+        );
       }
 
-      card.querySelector('.manufacturer').textContent =
-        item.manufacturer;
+      card.querySelector(
+        '.manufacturer'
+      ).textContent = item.manufacturer;
 
-      card.querySelector('.code').textContent =
-        item.code;
+      card.querySelector(
+        '.code'
+      ).textContent = item.code;
 
       const visibleDescription =
         item.display_text || item.text;
 
-      card.querySelector('.description').textContent =
-        visibleDescription
-          .replace(item.code, '')
-          .replace(/\s*\|\s*/g, '\n')
-          .trim();
+      card.querySelector(
+        '.description'
+      ).textContent = visibleDescription
+        .replace(item.code, '')
+        .replace(/\s*\|\s*/g, '\n')
+        .trim();
 
-      card.querySelector('.category').textContent =
+      card.querySelector(
+        '.category'
+      ).textContent =
         item.category || 'Autopeças';
 
       const pages =
@@ -368,17 +424,22 @@ async function performSearch(query) {
           ? item.pages
           : [];
 
-      card.querySelector('.pages').textContent =
+      card.querySelector(
+        '.pages'
+      ).textContent =
         pages.length
-          ? `Página${pages.length > 1 ? 's' : ''} ` +
-            pages.join(', ')
+          ? `Página${
+              pages.length > 1 ? 's' : ''
+            } ${pages.join(', ')}`
           : 'Página não informada';
 
-      card.querySelector('.edition').textContent =
-        item.edition || '';
+      card.querySelector(
+        '.edition'
+      ).textContent = item.edition || '';
 
-      card.querySelector('.raw-text').textContent =
-        item.text;
+      card.querySelector(
+        '.raw-text'
+      ).textContent = item.text;
 
       results.appendChild(card);
     });
@@ -390,45 +451,58 @@ async function performSearch(query) {
   }
 }
 
-applicationForm.addEventListener('submit', event => {
-  event.preventDefault();
+applicationForm.addEventListener(
+  'submit',
+  event => {
+    event.preventDefault();
 
-  const partType = partTypeInput.value.trim();
-  const vehicle = vehicleInput.value.trim();
-  const year = yearInput.value.trim();
-  const engine = engineInput.value.trim();
+    const partType =
+      partTypeInput.value.trim();
 
-  if (!partType || !vehicle) {
-    showMessage(
-      'Preencha os campos principais',
-      'Informe pelo menos o tipo da peça e o veículo.'
-    );
+    const vehicle =
+      vehicleInput.value.trim();
 
-    return;
+    const year =
+      yearInput.value.trim();
+
+    const engine =
+      engineInput.value.trim();
+
+    if (!partType || !vehicle) {
+      showMessage(
+        'Preencha os campos principais',
+        'Informe pelo menos o tipo da peça e o veículo.'
+      );
+
+      return;
+    }
+
+    if (
+      year &&
+      !/^(19|20)\d{2}$/.test(year)
+    ) {
+      yearInput.focus();
+
+      showMessage(
+        'Ano inválido',
+        'Digite o ano com quatro números, por exemplo: 2005.'
+      );
+
+      return;
+    }
+
+    const structuredQuery = [
+      partType,
+      vehicle,
+      year,
+      engine
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    performSearch(structuredQuery);
   }
-
-  if (year && !/^(19|20)\d{2}$/.test(year)) {
-    yearInput.focus();
-
-    showMessage(
-      'Ano inválido',
-      'Digite o ano com quatro números, por exemplo: 2005.'
-    );
-
-    return;
-  }
-
-  const structuredQuery = [
-    partType,
-    vehicle,
-    year,
-    engine
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  performSearch(structuredQuery);
-});
+);
 
 form.addEventListener('submit', event => {
   event.preventDefault();

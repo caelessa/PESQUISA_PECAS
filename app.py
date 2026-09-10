@@ -985,21 +985,32 @@ def api_search():
             return jsonify({"error": "Catálogo selecionado inválido."}), 400
         if not any(active_id == catalog_id for active_id, _, _ in CATALOGS):
             return jsonify({"error": "O catálogo selecionado não está ativo."}), 400
-    results = search_catalog(query, catalog_id=catalog_id)
+    if structured_search:
+        # Primeiro encontre candidatos pela peça, veículo e motor. O ano é
+        # validado depois, dentro de cada linha de aplicação. Isso evita que
+        # catálogos com várias gerações do mesmo veículo no mesmo produto
+        # eliminem antecipadamente uma aplicação válida.
+        candidate_query = re.sub(r"(?<!\d)(?:19|20)\d{2}(?!\d)", " ", query)
+        candidate_query = re.sub(r"\s+", " ", candidate_query).strip()
+        results = search_catalog(candidate_query, limit=60, catalog_id=catalog_id)
+    else:
+        results = search_catalog(query, catalog_id=catalog_id)
     effective_query = query
     interpreted = None
-    if not results:
+    if not results and not structured_search:
         interpreted = interpret_catalog_question(query)
         ai_query = interpreted.normalized_query.strip() if interpreted else ""
         if ai_query and normalize(ai_query) != normalize(query):
             results = search_catalog(ai_query, catalog_id=catalog_id)
             effective_query = ai_query
     direct_answer = answer_catalog_question(query, results)
-    results = focus_search_results(results, effective_query)
+    # Na consulta estruturada, o texto original ainda contém o ano informado
+    # e é usado para confirmar a aplicação exata.
+    results = focus_search_results(results, query if structured_search else effective_query)
     # Na ficha por veículo, só é seguro exibir um produto quando conseguimos
     # confirmar veículo, motor/ano informados dentro da mesma aplicação.
     if structured_search:
-        results = [item for item in results if item.get("display_text")]
+        results = [item for item in results if item.get("display_text")][:12]
     return jsonify({
         "query": query,
         "results": results,

@@ -99,6 +99,12 @@ FULL_YEAR_RANGE_RE = re.compile(
 )
 SINCE_YEAR_RE = re.compile(r"\bDESDE\s+(?:\d{1,2}/)?(19\d{2}|20\d{2})(?!\d)")
 UNTIL_YEAR_RE = re.compile(r"\bATE\s+(?:\d{1,2}/)?(19\d{2}|20\d{2})(?!\d)")
+GREATER_YEAR_RANGE_RE = re.compile(
+    r"(?<!\d)(19\d{2}|20\d{2})\s*>\s*(19\d{2}|20\d{2})(?!\d)"
+)
+GREATER_YEAR_OPEN_RE = re.compile(
+    r"(?<!\d)(19\d{2}|20\d{2})\s*>(?!\s*(?:19|20)\d{2})"
+)
 GENERIC_TERMS = {"BIELETA", "BOMBA", "AGUA", "CILINDRO", "CRUZETA", "CUBO", "FILTRO", "KIT", "BUCHA", "SUPORTE", "PINO", "PONTA", "POLIA", "GUIA", "TENSOR", "REPARO", "ROLAMENTO", "SAPATA", "SEMIEXO", "TERMINAL", "TRIZETA", "ADITIVO", "DIANTEIRA", "TRASEIRA", "DIREITA", "ESQUERDA"}
 
 
@@ -194,10 +200,12 @@ def contains_token(text: str, token: str) -> bool:
 
 
 def year_spans(text: str) -> list[tuple[int, int]]:
-    """Read catalog year formats such as 09/14, 2009 a 2014 and 2009 a 07/2014."""
+    """Read catalog year formats such as 09/14, 2009 a 2014, 2010>2014 and 2012>."""
     spans = [(int(start), int(end)) for start, end in FULL_YEAR_RANGE_RE.findall(text)]
     spans.extend((int(start), 9999) for start in SINCE_YEAR_RE.findall(text))
     spans.extend((1950, int(end)) for end in UNTIL_YEAR_RE.findall(text))
+    spans.extend((int(start), int(end)) for start, end in GREATER_YEAR_RANGE_RE.findall(text))
+    spans.extend((int(start), 9999) for start in GREATER_YEAR_OPEN_RE.findall(text))
     for start, end in YEAR_RE.findall(text):
         start_year = 1900 + int(start) if int(start) >= 40 else 2000 + int(start)
         end_year = 9999 if end == "..." else (1900 + int(end) if int(end) >= 40 else 2000 + int(end))

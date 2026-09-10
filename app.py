@@ -129,7 +129,8 @@ class CatalogAnswer(BaseModel):
 
 def normalize(value: str) -> str:
     value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().upper()
-    return re.sub(r"[^A-Z0-9./-]+", " ", value).strip()
+    # O sinal > é usado pelo catálogo TSA em anos: 2010>2014 e 2012>.
+    return re.sub(r"[^A-Z0-9./>\-]+", " ", value).strip()
 
 
 def normalize_search_language(value: str, active_canonicals: set[str] | None = None) -> str:

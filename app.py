@@ -347,6 +347,37 @@ APPLICATION_SECTION_RE = re.compile(
     r"\bAPLICA[CÇ][OÕ]ES(?:\s+DETALHADAS)?\s*:\s*(.*?)(?=\s+EQUIVAL[EÊ]NCIAS(?:\s+E\s+REFER[EÊ]NCIAS(?:\s+ORIGINAIS)?)?\s*:|$)",
     re.I,
 )
+APPLICATION_YEAR_MARKER_RE = re.compile(
+    r"(?<!\d)(?:"
+    r"(?:19\d{2}|20\d{2})\s*(?:A|>)\s*(?:19\d{2}|20\d{2})"
+    r"|(?:19\d{2}|20\d{2})\s*>"
+    r"|(?:DESDE|ATE)\s+(?:\d{1,2}/)?(?:19\d{2}|20\d{2})"
+    r"|\d{2}/(?:\d{2}|\.\.\.)"
+    r")(?!\d)",
+    re.I,
+)
+
+
+def split_application_rows(section: str) -> list[str]:
+    """Separate vehicle rows even when a catalog omitted pipes or line breaks."""
+    rows = []
+    for block in section.split("|"):
+        block = block.strip(" .")
+        if not block:
+            continue
+        markers = list(APPLICATION_YEAR_MARKER_RE.finditer(block))
+        if len(markers) <= 1:
+            rows.append(block)
+            continue
+        for index, marker in enumerate(markers):
+            start = markers[index - 1].end() if index else 0
+            # O veículo e o motor aparecem antes do seu ano. Encerrar no ano
+            # impede que o nome do próximo veículo seja associado ao intervalo anterior.
+            end = marker.end()
+            row = block[start:end].strip(" .;,-")
+            if row:
+                rows.append(row)
+    return rows
 
 
 def application_focus_tokens(query: str, item: dict, product_text: str = "") -> tuple[list[str], list[int]]:
@@ -399,7 +430,7 @@ def focused_application_text(item: dict, query: str) -> str | None:
     if not focus_tokens:
         return None
     matching = []
-    segments = [piece.strip(" .") for piece in application_text.split("|")]
+    segments = split_application_rows(application_text)
     for segment in segments:
         if not segment:
             continue

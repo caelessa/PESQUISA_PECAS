@@ -362,7 +362,8 @@ def split_application_rows(section: str) -> list[str]:
     """Separate vehicle rows even when a catalog omitted pipes or line breaks."""
     rows = []
     for block in section.split("|"):
-        block = block.strip(" .")
+        # Pontos podem ser parte de um ano aberto, por exemplo 20/...
+        block = block.strip()
         if not block:
             continue
         markers = list(APPLICATION_YEAR_MARKER_RE.finditer(block))
@@ -374,7 +375,8 @@ def split_application_rows(section: str) -> list[str]:
             # O veículo e o motor aparecem antes do seu ano. Encerrar no ano
             # impede que o nome do próximo veículo seja associado ao intervalo anterior.
             end = marker.end()
-            row = block[start:end].strip(" .;,-")
+            # Não retirar pontos: em formatos como 20/... eles fazem parte do ano.
+            row = block[start:end].strip(" ;,-")
             if row:
                 rows.append(row)
     return rows
